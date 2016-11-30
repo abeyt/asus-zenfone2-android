@@ -589,6 +589,11 @@ static int gpio_keys_setup_key(struct platform_device *pdev,
 						button->debounce_interval;
 		}
 
+		if (button->code == KEY_VOLUMEDOWN || button->code == KEY_VOLUMEUP) {
+			bdata->timer_debounce =
+						button->debounce_interval;	
+		}
+
 		irq = gpio_to_irq(button->gpio);
 		if (irq < 0) {
 			error = irq;

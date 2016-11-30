@@ -39,37 +39,37 @@ static int FWvendorid = 0;
 static int CTPM_FW_SIZE = 0;
 static unsigned char *CTPM_FW;
 static unsigned char CTPM_FW_ZE550ML_31[] = {
-#include "ASUS_ZE550ML_5446_0x31_0xA7_20150302_app.i"
+#include "ASUS_ZE550ML_5446_0x31_0xA8_20150310_app.i"
 };
 static unsigned char CTPM_FW_ZE550ML_71[] = {
-#include "ASUS_ZE550ML_5446_0x71_0xA9_20150302_app.i"
+#include "ASUS_ZE550ML_5446_0x71_0xAB_20150310_app.i"
 };
 static unsigned char CTPM_FW_ZE550ML_72[] = {
-#include "ASUS_ZE550ML_5446_0x72_0xAA_20150302_app.i"
+#include "ASUS_ZE550ML_5446_0x72_0xAC_20150310_app.i"
 };
 static unsigned char CTPM_FW_ZE550ML_81[] = {
-#include "ASUS_ZE550ML_5446_0x81_0xA9_20150302_app.i"
+#include "ASUS_ZE550ML_5446_0x81_0xAB_20150310_app.i"
 };
 static unsigned char CTPM_FW_ZE550ML_82[] = {
-#include "ASUS_ZE550ML_5446_0x82_0xAA_20150302_app.i"
+#include "ASUS_ZE550ML_5446_0x82_0xAC_20150310_app.i"
 };
 static unsigned char CTPM_FW_ZE551ML_31[] = {
-#include "ASUS_ZE551ML_5446_0x31_0xA7_20150302_app.i"
+#include "ASUS_ZE551ML_5446_0x31_0xA8_20150310_app.i"
 };
 static unsigned char CTPM_FW_ZE551ML_71[] = {
-#include "ASUS_ZE551ML_5446_0x71_0xA7_20150302_app.i"
+#include "ASUS_ZE551ML_5446_0x71_0xAA_20150310_app.i"
 };
 static unsigned char CTPM_FW_ZE551ML_73[] = {
-#include "ASUS_ZE551ML_5446_0x73_0xA8_20150305_app.i"
+#include "ASUS_ZE551ML_5446_0x73_0xA9_20150308_app.i"
 };
 static unsigned char CTPM_FW_ZE551ML_75[] = {
 #include "ASUS_ZE551ML_5446_0x75_0x4A_20150109_app.i"
 };
 static unsigned char CTPM_FW_ZE551ML_81[] = {
-#include "ASUS_ZE551ML_5446_0x81_0xA8_20150302_app.i"
+#include "ASUS_ZE551ML_5446_0x81_0xAC_20150310_app.i"
 };
 static unsigned char CTPM_FW_ZE551ML_83[] = {
-#include "ASUS_ZE551ML_5446_0x83_0xAA_20150303_app.i"
+#include "ASUS_ZE551ML_5446_0x83_0xAB_20150306_app.i"
 };
 static unsigned char CTPM_FW_ZE551ML_85[] = {
 #include "ASUS_ZE551ML_5446_0x80_0x41_20141212_app.i"

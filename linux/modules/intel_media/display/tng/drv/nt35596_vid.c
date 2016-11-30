@@ -578,9 +578,42 @@ static u8 cm2_007[] = {0xD3, 0x06};
 static u8 cm2_008[] = {0xD4, 0x04};
 
 static u8 cm3_001[] = {0xFF, 0x00};
-static u8 cm3_002[] = {0xD3, 0x30};
-static u8 cm3_003[] = {0xD4, 0x06};
+static u8 cm3_002[] = {0xD3, 0x06};
+static u8 cm3_003[] = {0xD4, 0x04};
+static u8 cm3_004[] = {0xFF, 0x01};
+static u8 cm3_005[] = {0xFB, 0x01};
+static u8 cm3_006[] = {0x15, 0x0F};
+static u8 cm3_007[] = {0x16, 0x0F};
+static u8 cm3_008[] = {0x1B, 0x1B};
+static u8 cm3_009[] = {0x1C, 0xF7};
+static u8 cm3_010[] = {0x60, 0x0F};
+static u8 cm3_011[] = {0x58, 0x82};
+static u8 cm3_012[] = {0x59, 0x00};
+static u8 cm3_013[] = {0x5A, 0x02};
+static u8 cm3_014[] = {0x5B, 0x00};
+static u8 cm3_015[] = {0x5C, 0x82};
+static u8 cm3_016[] = {0x5D, 0x80};
+static u8 cm3_017[] = {0x5E, 0x02};
+static u8 cm3_018[] = {0x5F, 0x00};
+static u8 cm3_019[] = {0x66, 0x01};
+static u8 cm3_020[] = {0xFF, 0x05};
+static u8 cm3_021[] = {0xFB, 0x01};
+static u8 cm3_022[] = {0x85, 0x05};
+static u8 cm3_023[] = {0xA6, 0x04};
+static u8 cm3_024[] = {0xFF, 0xFF};
+static u8 cm3_025[] = {0xFB, 0x01};
+static u8 cm3_026[] = {0x4F, 0x03};
+static u8 cm3_027[] = {0xFF, 0x00};
 
+/* ESD workaround */
+static u8 cm3_101[] = {0x05, 0x1A};
+static u8 cm3_102[] = {0x06, 0x10};
+static u8 cm3_103[] = {0x07, 0x00};
+static u8 cm3_104[] = {0x15, 0x1A};
+static u8 cm3_105[] = {0x16, 0x10};
+static u8 cm3_106[] = {0x17, 0x10};
+static u8 cm3_107[] = {0x53, 0x12};
+static u8 cm3_108[] = {0x7E, 0x1F};
 
 
 /* ====Power on commnad==== */
@@ -1088,6 +1121,38 @@ static struct mipi_dsi_cmd ze551ml_AUO_power_on_table[] = {
 	{0, sizeof(cm3_001), cm3_001},
 	{0, sizeof(cm3_002), cm3_002},
 	{0, sizeof(cm3_003), cm3_003},
+	{0, sizeof(cm3_004), cm3_004},
+	{0, sizeof(cm3_005), cm3_005},
+	{0, sizeof(cm3_006), cm3_006},
+	{0, sizeof(cm3_007), cm3_007},
+	{0, sizeof(cm3_008), cm3_008},
+	{0, sizeof(cm3_009), cm3_009},
+	{0, sizeof(cm3_010), cm3_010},
+	{0, sizeof(cm3_011), cm3_011},
+	{0, sizeof(cm3_012), cm3_012},
+	{0, sizeof(cm3_013), cm3_013},
+	{0, sizeof(cm3_014), cm3_014},
+	{0, sizeof(cm3_015), cm3_015},
+	{0, sizeof(cm3_016), cm3_016},
+	{0, sizeof(cm3_017), cm3_017},
+	{0, sizeof(cm3_018), cm3_018},
+	{0, sizeof(cm3_019), cm3_019},
+	{0, sizeof(cm3_020), cm3_020},
+	{0, sizeof(cm3_021), cm3_021},
+	{0, sizeof(cm3_022), cm3_022},
+	{0, sizeof(cm3_023), cm3_023},
+	{0, sizeof(cm3_101), cm3_101},
+	{0, sizeof(cm3_102), cm3_102},
+	{0, sizeof(cm3_103), cm3_103},
+	{0, sizeof(cm3_104), cm3_104},
+	{0, sizeof(cm3_105), cm3_105},
+	{0, sizeof(cm3_106), cm3_106},
+	{0, sizeof(cm3_107), cm3_107},
+	{0, sizeof(cm3_108), cm3_108},
+	{0, sizeof(cm3_024), cm3_024},
+	{0, sizeof(cm3_025), cm3_025},
+	{0, sizeof(cm3_026), cm3_026},
+	{0, sizeof(cm3_027), cm3_027},
 };
 
 
@@ -1182,6 +1247,7 @@ static int nt35596_vid_drv_ic_reset_workaround(struct mdfld_dsi_config *dsi_conf
 
 	sender->status = MDFLD_DSI_PKG_SENDER_FREE;
 
+	mdfld_dsi_send_mcs_short_lp(sender, 0xFF, 0x00, 1, MDFLD_DSI_SEND_PACKAGE);
 	mdfld_dsi_send_mcs_short_lp(sender, 0x11, 0, 0, MDFLD_DSI_SEND_PACKAGE);
 	mdelay(10);
 	mdfld_dsi_send_mcs_short_lp(sender, 0x29, 0, 0, MDFLD_DSI_SEND_PACKAGE);
@@ -1207,6 +1273,7 @@ static int nt35596_vid_drv_ic_init(struct mdfld_dsi_config *dsi_config){
 	struct mdfld_dsi_pkg_sender *sender =
 		mdfld_dsi_get_pkg_sender(dsi_config);
 	int i;
+	static int first_boot = 1;
 
 	if (!sender) {
 		DRM_ERROR("Failed to get DSI packet sender\n");
@@ -1215,20 +1282,53 @@ static int nt35596_vid_drv_ic_init(struct mdfld_dsi_config *dsi_config){
 
 	printk("[DISP] %s\n", __func__);
 
-	gpio_set_value_cansleep(panel_reset_gpio, 1);
-	usleep_range(5000, 5050);
-	gpio_set_value_cansleep(panel_reset_gpio, 0);
-	usleep_range(5000, 5050);
-	gpio_set_value_cansleep(panel_reset_gpio, 1);
-	usleep_range(20000, 20100);
+	if (first_boot) {
+		if (Read_LCD_ID() == ZE551ML_LCD_ID_NT_AUO) {
+			gpio_set_value_cansleep(panel_reset_gpio, 1);
+			usleep_range(5000, 5050);
+			gpio_set_value_cansleep(panel_reset_gpio, 0);
+			usleep_range(5000, 5050);
+			gpio_set_value_cansleep(panel_reset_gpio, 1);
+			usleep_range(120000, 120100);
+		} else {
+			/* two finger reset to fix some panel abnormal status*/
+			gpio_set_value_cansleep(panel_reset_gpio, 1);
+			usleep_range(5000, 5050);
+			gpio_set_value_cansleep(panel_reset_gpio, 0);
+			usleep_range(5000, 5050);
+			gpio_set_value_cansleep(panel_reset_gpio, 1);
+			usleep_range(120000, 120100);
+
+			gpio_set_value_cansleep(panel_reset_gpio, 0);
+			usleep_range(5000, 5050);
+			gpio_set_value_cansleep(panel_reset_gpio, 1);
+			usleep_range(5000, 5050);
+			gpio_set_value_cansleep(panel_reset_gpio, 0);
+			usleep_range(5000, 5050);
+			gpio_set_value_cansleep(panel_reset_gpio, 1);
+			usleep_range(20000, 20050);
+		}
+		first_boot = 0;
+	} else {
+		gpio_set_value_cansleep(panel_reset_gpio, 1);
+		usleep_range(5000, 5050);
+		gpio_set_value_cansleep(panel_reset_gpio, 0);
+		usleep_range(5000, 5050);
+		gpio_set_value_cansleep(panel_reset_gpio, 1);
+
+		if (Read_LCD_ID() == ZE551ML_LCD_ID_NT_AUO)
+			usleep_range(60000, 60100);
+		else
+			usleep_range(20000, 20100);
+	}
 
 	/* panel initial settings */
 	for (i = 0; i < nt35596_power_on_table_size; i++)
 		send_mipi_cmd_mcs(sender, &nt35596_power_on_table[i]);
 
 	mdfld_dsi_send_mcs_short_lp(sender, 0x11, 0, 0, MDFLD_DSI_SEND_PACKAGE);
-	mdelay(130);
-	mdfld_dsi_send_mcs_short_lp(sender, 0x29, 0, 0, MDFLD_DSI_SEND_PACKAGE);
+	mdelay(15);
+	queue_delayed_work(nt35596_panel_reset_delay_wq, &nt35596_panel_reset_delay_work, msecs_to_jiffies(100));
 
 	return 0;
 }
@@ -1304,7 +1404,7 @@ static int nt35596_vid_power_on(struct mdfld_dsi_config *dsi_config)
 		return -EINVAL;
 	}
 	usleep_range(1000, 1100);
-	queue_delayed_work(nt35596_panel_reset_delay_wq, &nt35596_panel_reset_delay_work, msecs_to_jiffies(5000));
+//	queue_delayed_work(nt35596_panel_reset_delay_wq, &nt35596_panel_reset_delay_work, msecs_to_jiffies(5000));
 
 	return 0;
 }
@@ -1420,10 +1520,12 @@ static int nt35596_vid_set_brightness(struct mdfld_dsi_config *dsi_config,
 			pwmctrl.part.pwmenable = 1;
 			writel(pwmctrl.full, pwmctrl_mmio);
 		} else if (gpio_get_value(backlight_en_gpio)) {
-			writel(pwmctrl.full, pwmctrl_mmio);
 			pwmctrl.part.pwmenable = 0;
-			gpio_set_value_cansleep(backlight_en_gpio, 0);
+			writel(pwmctrl.full, pwmctrl_mmio);
+			gpio_set_value_cansleep(backlight_pwm_gpio, 0);
 			lnw_gpio_set_alt(backlight_pwm_gpio, 0);
+			usleep_range(10000, 10100);
+			gpio_set_value_cansleep(backlight_en_gpio, 0);
 			pmu_set_pwm(PCI_D3hot);
 		}
 	} else {
@@ -1447,17 +1549,17 @@ struct drm_display_mode *nt35596_vid_get_config_mode(void)
 
 	if (Read_LCD_ID() == ZE551ML_LCD_ID_NT_AUO) {
 		/* RECOMMENDED PORCH SETTING
-			HSA=20, HBP=56, HFP=104
-			VSA=2,   VBP=46, VFP=6	 */
+			HSA=8, HBP=16, HFP=90
+			VSA=2,   VBP=4, VFP=4	 */
 		mode->hdisplay = 1080;
-		mode->hsync_start = mode->hdisplay + 104;
-		mode->hsync_end = mode->hsync_start + 20;
-		mode->htotal = mode->hsync_end + 56;
+		mode->hsync_start = mode->hdisplay + 90;
+		mode->hsync_end = mode->hsync_start + 8;
+		mode->htotal = mode->hsync_end + 16;
 
 		mode->vdisplay = 1920;
-		mode->vsync_start = mode->vdisplay + 6;
+		mode->vsync_start = mode->vdisplay + 4;
 		mode->vsync_end = mode->vsync_start + 2;
-		mode->vtotal = mode->vsync_end + 46;
+		mode->vtotal = mode->vsync_end + 4;
 	} else {
 		/* RECOMMENDED PORCH SETTING
 			HSA=8, HBP=16, HFP=90

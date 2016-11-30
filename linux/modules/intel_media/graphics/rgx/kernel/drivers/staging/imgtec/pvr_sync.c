@@ -1378,8 +1378,9 @@ static int pvr_sync_alloc_release(struct inode *inode, struct file *file)
 		 * between this sync's alloc and it's close. Otherwise those
 		 * allocated will be fencing on a timeline value that will
 		 * never be reached. */
-		alloc_sync_data->timeline->timeline_sync->next_value =
-			alloc_sync_data->sync_data->timeline_fence_value;
+		if(alloc_sync_data->sync_data->kernel->fence_sync->next_value == 0)
+			alloc_sync_data->timeline->timeline_sync->next_value =
+				alloc_sync_data->sync_data->timeline_fence_value;
 	}
 	pvr_sync_free_sync_data(alloc_sync_data->sync_data);
 	kfree(alloc_sync_data);

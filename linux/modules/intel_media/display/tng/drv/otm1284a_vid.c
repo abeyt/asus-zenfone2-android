@@ -980,10 +980,12 @@ static int otm1284a_vid_set_brightness(struct mdfld_dsi_config *dsi_config,
 			pwmctrl.part.pwmenable = 1;
 			writel(pwmctrl.full, pwmctrl_mmio);
 		} else if (gpio_get_value(backlight_en_gpio)) {
-			writel(pwmctrl.full, pwmctrl_mmio);
 			pwmctrl.part.pwmenable = 0;
-			gpio_set_value_cansleep(backlight_en_gpio, 0);
+			writel(pwmctrl.full, pwmctrl_mmio);
+			gpio_set_value_cansleep(backlight_pwm_gpio, 0);
 			lnw_gpio_set_alt(backlight_pwm_gpio, 0);
+			usleep_range(10000, 10100);
+			gpio_set_value_cansleep(backlight_en_gpio, 0);
 			pmu_set_pwm(PCI_D3hot);
 		}
 	} else {

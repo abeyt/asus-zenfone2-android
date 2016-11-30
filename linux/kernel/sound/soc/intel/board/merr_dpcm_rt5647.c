@@ -560,17 +560,17 @@ static int mrfld_jack_gpio_pr_detect_bp_up_down(void)
 	switch (btn_type) {
 		case 0x2000:
 			status = SND_JACK_BTN_1;
-			pr_debug("%s: button up\n", __func__);
+			printk("%s: button up\n", __func__);
 			break;
 		case 0x0400:
 			if (!mrfld_play_enable) {
 				status = SND_JACK_BTN_3;
-				pr_debug("%s: button voice \n", __func__);
+				printk("%s: button voice \n", __func__);
 			}
                         break;
 		case 0x0080:
 			status = SND_JACK_BTN_2;
-			pr_debug("%s: button down\n", __func__);
+			printk("%s: button down\n", __func__);
 			break;
 		}
 	return status;

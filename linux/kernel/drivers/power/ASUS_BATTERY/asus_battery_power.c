@@ -698,20 +698,14 @@ static int asus_battery_update_status_no_mutex(int percentage)
 
 #ifdef CONFIG_SMB1357_CHARGER
 		//BAT_DBG("smb1357!!!!!%s\n",__func__);
-/*
+
 		if(cable_status == USB_ADAPTER) {
-			if((dcp_mode==1)&&(smb1357_get_aicl_result() < 0x0d)) {
-				BAT_DBG("DCP in and aicl result < 1200mA, set current again!\n");
-				smb1357_AC_in_current();
-			}else if((dcp_mode==2)&&(smb1357_get_aicl_result() < 0x0b)) {
-				BAT_DBG("other charging port in and aicl result < 1000mA, set current again!\n");
-				smb1357_AC_in_current();
-			}else if(smb1357_get_aicl_result() < 0x04) {
-				BAT_DBG("adaptor in and aicl result < 500mA, set current again!\n");
-				smb1357_AC_in_current();
+			if((hvdcp_mode==1)&&(smb1357_get_aicl_result() < 0x12)) {
+				BAT_DBG("HVDCP in and aicl result < 1800mA, set current again!\n");
+				set_QC_inputI_limit(2);
 			}
 		}
-*/
+
 		/* read voltage to set recharge voltage*/
 		vbat = asus_battery_update_voltage_no_mutex();
 		
@@ -1063,24 +1057,20 @@ handle500_600:
 		if(qc_disable&&hvdcp_mode&&(!early_suspend_flag)) {
 			if(systherm2_temp<temp_1400) {
 				if(current_type>=LIMIT_1400 && systherm2_temp>(temp_1400-3000)) {
-					set_QC_inputI_limit(false);
 					smb1357_set_voltage(false);
 					smb1357_set_Ichg(1400);
 					smb1357_charging_toggle(true);
 					current_type=LIMIT_1400;
 				}else {
-					set_QC_inputI_limit(true);
 					current_type=LIMIT_NONE;
 				}
 			}else if(systherm2_temp>=temp_1400 && systherm2_temp<temp_700) {
 				if(current_type>=LIMIT_700 && systherm2_temp>(temp_700-3000)) {
-					set_QC_inputI_limit(false);
 					smb1357_set_voltage(false);
 					smb1357_set_Ichg(700);
 					smb1357_charging_toggle(true);
 					current_type=LIMIT_700;
 				}else {
-					set_QC_inputI_limit(false);
 					smb1357_set_voltage(false);
 					smb1357_set_Ichg(1400);
 					smb1357_charging_toggle(true);
@@ -1094,7 +1084,6 @@ handle500_600:
 					status = POWER_SUPPLY_STATUS_DISCHARGING;
 					goto final;
 				}else {
-					set_QC_inputI_limit(false);
 					smb1357_set_voltage(false);
 					smb1357_set_Ichg(700);
 					smb1357_charging_toggle(true);
@@ -1342,16 +1331,16 @@ void usb_to_battery_callback(u32 usb_cable_state)
                 smb347_AC_in_current();
             }
 #elif defined(CONFIG_SMB1357_CHARGER)
-            if (batt_info.cable_status == USB_ADAPTER) {
 		smb1357_set_fast_charge();
 		smb1357_charging_toggle(false); // for not charging when almost full battery workaround
 		smb1357_set_voltage(false);
 		smb1357_charging_toggle(true); // for not charging when almost full battery workaround
 		smb1357_watchdog_timer_enable();
-                //smb1357_AC_in_current();
-            }
-            highchgvol_flag = 0;
-            smb1357_control_JEITA(true);
+		if (batt_info.cable_status == USB_ADAPTER) {
+			smb1357_AC_in_current();
+		}
+		highchgvol_flag = 0;
+		smb1357_control_JEITA(true);
 #endif
         }
 

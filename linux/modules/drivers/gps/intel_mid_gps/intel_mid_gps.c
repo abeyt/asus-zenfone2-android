@@ -26,6 +26,7 @@
 #include <linux/pm_runtime.h>
 #include <asm/intel-mid.h>
 #include <asm/intel_mid_hsu.h>
+#include <asm/intel_scu_flis.h>
 #include <linux/intel_mid_gps.h>
 #include <linux/lnw_gpio.h>
 
@@ -68,6 +69,7 @@ static int intel_mid_gps_reset(struct device *dev, const char *buf)
 static int intel_mid_gps_enable(struct device *dev, const char *buf)
 {
 	struct intel_mid_gps_platform_data *gps = dev_get_drvdata(dev);
+	set_flis_value(0x3221, 0x2120);
 
 	if (!buf)
 		return -EINVAL;

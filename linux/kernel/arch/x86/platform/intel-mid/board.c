@@ -475,7 +475,7 @@ struct devs_id __initconst device_ids[] = {
 	{"soc_thrm", SFI_DEV_TYPE_IPC, 1, &no_platform_data,
 						&soc_thrm_device_handler},
 	/*{"wm8958", SFI_DEV_TYPE_I2C, 0, &wm8994_platform_data, NULL},*/
-	{"rt5647", SFI_DEV_TYPE_I2C, 0, &no_platform_data, NULL},
+	{"rt5647", SFI_DEV_TYPE_I2C, 0, &rt5647_platform_data, NULL},
 	{"wm5102", SFI_DEV_TYPE_I2C, 0, &wm5102_platform_data, NULL},
 	{"lm49453_codec", SFI_DEV_TYPE_I2C, 1, &no_platform_data, NULL},
 	{"cs42l73", SFI_DEV_TYPE_I2C, 1, &cs42l73_platform_data, NULL},

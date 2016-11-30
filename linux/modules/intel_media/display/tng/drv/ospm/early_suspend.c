@@ -150,12 +150,37 @@ static struct early_suspend intel_media_early_suspend = {
 
 static int display_reboot_notifier_call(struct notifier_block *this, unsigned long event, void *ptr)
 {
+	struct drm_psb_private *dev_priv = g_dev->dev_private;
+	struct drm_device *dev = dev_priv->dev;
+	struct drm_encoder *encoder;
+	struct drm_encoder_helper_funcs *enc_funcs;
+
 	switch (event) {
 	case SYS_RESTART:
 	case SYS_HALT:
 	case SYS_POWER_OFF:
 		pr_info("%s+\n", __func__);
-		gfx_early_suspend(NULL);
+		//gfx_early_suspend(NULL);
+		/* protect early_suspend with dpms and mode config */
+		if (dev_priv->early_suspended)
+			return;
+
+		mutex_lock(&dev->mode_config.mutex);
+		/*
+		* We borrow the early_suspended to avoid entering flip path after
+		* shutdown is called
+		*/
+		dev_priv->early_suspended = true;
+
+		/* wait for the previous flip to be finished */
+		list_for_each_entry(encoder, &dev->mode_config.encoder_list, head) {
+			enc_funcs = encoder->helper_private;
+			if (!drm_helper_encoder_in_use(encoder))
+				continue;
+			if (enc_funcs && enc_funcs->save)
+				enc_funcs->save(encoder);
+		}
+		mutex_unlock(&dev->mode_config.mutex);
 		pr_info("%s-\n", __func__);
 		break;
 	}

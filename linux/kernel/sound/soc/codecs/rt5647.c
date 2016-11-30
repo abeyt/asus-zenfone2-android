@@ -28,6 +28,7 @@
 #include <sound/soc-dapm.h>
 #include <sound/initval.h>
 #include <sound/tlv.h>
+#include <asm/platform_mrfld_audio.h>
 
 #define RTK_IOCTL
 #ifdef RTK_IOCTL
@@ -1202,7 +1203,9 @@ static int set_dmic_clk(struct snd_soc_dapm_widget *w,
 	else
 		/*snd_soc_update_bits(codec, RT5647_DMIC_CTRL1, RT5647_DMIC_CLK_MASK,
 					idx << RT5647_DMIC_CLK_SFT);*/
-		snd_soc_update_bits(codec, RT5647_DMIC_CTRL1, 0xc0, 0x80); /*Set DMIC clock 3M to 2M*/
+		//snd_soc_update_bits(codec, RT5647_DMIC_CTRL1, 0xc0, 0x80); /*Set DMIC clock 3M to 2M*/
+		snd_soc_update_bits(codec, RT5647_DMIC_CTRL1, RT5647_DMIC_CLK_MASK,
+					idx << RT5647_DMIC_CLK_SFT);
 	return idx;
 }
 
@@ -3169,9 +3172,9 @@ static int get_clk_info(int sclk, int rate)
 {
 	int i, pd[] = {1, 2, 3, 4, 6, 8, 12, 16};
 
-#ifdef USE_ASRC
+/*#ifdef USE_ASRC
 	return 0;
-#endif
+#endif*/
 	if (sclk <= 0 || rate <= 0)
 		return -EINVAL;
 
@@ -3190,14 +3193,43 @@ static int rt5647_hw_params(struct snd_pcm_substream *substream,
 	struct rt5647_priv *rt5647 = snd_soc_codec_get_drvdata(codec);
 	unsigned int val_len = 0, val_clk, mask_clk;
 	int pre_div, bclk_ms, frame_size;
+	struct snd_pcm_hw_params hw_params;
 
-	rt5647->lrck[dai->id] = params_rate(params);
+	if (params)
+		memcpy(&hw_params, params, sizeof(*params));
+	else {
+		pr_err("%s: invalid parameters\n", __func__);
+		return -EINVAL;
+	}
+
+	if (rt5647->custom_cfg) {
+		pr_debug("%s: overriding to custom params\n", __func__);
+                snd_mask_none(hw_param_mask(&hw_params,
+                                        SNDRV_PCM_HW_PARAM_FORMAT));
+                snd_mask_set(hw_param_mask(&hw_params,
+                                        SNDRV_PCM_HW_PARAM_FORMAT),
+                                        rt5647->custom_cfg->format);
+
+                hw_param_interval(&hw_params, SNDRV_PCM_HW_PARAM_RATE)->min =
+                                                rt5647->custom_cfg->rate;
+                hw_param_interval(&hw_params, SNDRV_PCM_HW_PARAM_RATE)->max =
+                                                rt5647->custom_cfg->rate;
+
+                hw_param_interval(&hw_params,
+                                        SNDRV_PCM_HW_PARAM_CHANNELS)->min =
+                                                rt5647->custom_cfg->channels;
+                hw_param_interval(&hw_params,
+                                        SNDRV_PCM_HW_PARAM_CHANNELS)->max =
+                                                rt5647->custom_cfg->channels;
+	}
+
+	rt5647->lrck[dai->id] = params_rate(&hw_params);
 	pre_div = get_clk_info(rt5647->sysclk, rt5647->lrck[dai->id]);
 	if (pre_div < 0) {
 		dev_err(codec->dev, "Unsupported clock setting\n");
 		return -EINVAL;
 	}
-	frame_size = snd_soc_params_to_frame_size(params);
+	frame_size = snd_soc_params_to_frame_size(&hw_params);
 	if (frame_size < 0) {
 		dev_err(codec->dev, "Unsupported frame size: %d\n", frame_size);
 		return -EINVAL;
@@ -3210,7 +3242,7 @@ static int rt5647_hw_params(struct snd_pcm_substream *substream,
 	dev_dbg(dai->dev, "bclk_ms is %d and pre_div is %d for iis %d\n",
 				bclk_ms, pre_div, dai->id);
 
-	switch (params_format(params)) {
+	switch (params_format(&hw_params)) {
 	case SNDRV_PCM_FORMAT_S16_LE:
 		break;
 	case SNDRV_PCM_FORMAT_S20_3LE:
@@ -4054,6 +4086,7 @@ static int rt5647_i2c_probe(struct i2c_client *i2c,
 		    const struct i2c_device_id *id)
 {
 	struct rt5647_priv *rt5647;
+	struct rt5647_custom_config *cfg = i2c->dev.platform_data;
 	int ret;
 
 	printk(KERN_INFO "%s: success", __func__);
@@ -4072,6 +4105,9 @@ static int rt5647_i2c_probe(struct i2c_client *i2c,
 		printk(KERN_INFO "%s: register fail", __func__);
 		kfree(rt5647);
 	}
+
+	if (cfg)
+		rt5647->custom_cfg = cfg;
 
 	return ret;
 }
