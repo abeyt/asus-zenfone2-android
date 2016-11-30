@@ -667,8 +667,12 @@ int rt5647_headset_detect(struct snd_soc_codec *codec, int jack_insert)
 
 	if (jack_insert) {
 		snd_soc_update_bits(codec, RT5647_PWR_ANLG1,
-				RT5647_PWR_MB | RT5647_PWR_VREF2,
+				RT5647_PWR_MB | RT5647_PWR_VREF2 | RT5647_PWR_FV2,
 				RT5647_PWR_MB | RT5647_PWR_VREF2);
+		msleep(10);
+		snd_soc_update_bits(codec, RT5647_PWR_ANLG1,
+				RT5647_PWR_FV2,
+				RT5647_PWR_FV2);
 		snd_soc_update_bits(codec, RT5647_PWR_ANLG2,
 			RT5647_PWR_MB1 | RT5647_PWR_MB2,
 			RT5647_PWR_MB1 | RT5647_PWR_MB2);
@@ -681,7 +685,8 @@ int rt5647_headset_detect(struct snd_soc_codec *codec, int jack_insert)
 		snd_soc_dapm_force_enable_pin(&codec->dapm, "LDO2");
 		snd_soc_dapm_force_enable_pin(&codec->dapm, "Mic Det Power");
 		snd_soc_dapm_sync(&codec->dapm);
-		snd_soc_write(codec, RT5647_CJ_CTRL1, 0x0006);
+		snd_soc_update_bits(codec, RT5647_CJ_CTRL1,
+			RT5647_CBJ_BST1_EN , RT5647_CBJ_BST1_EN);
 
 		snd_soc_write(codec, RT5647_JD_CTRL3, 0x00b0);
 		snd_soc_update_bits(codec, RT5647_CJ_CTRL2,
@@ -711,6 +716,8 @@ int rt5647_headset_detect(struct snd_soc_codec *codec, int jack_insert)
 			break;
 		}
 	} else {
+		snd_soc_update_bits(codec, RT5647_CJ_CTRL1,
+			RT5647_CBJ_BST1_EN , 0);
 		snd_soc_update_bits(codec, RT5647_INT_IRQ_ST, 0x8, 0x0);
 		snd_soc_update_bits(codec, RT5647_GEN_CTRL2, 0x8, 0x0);
 		snd_soc_dapm_disable_pin(&codec->dapm, "micbias1");
@@ -2445,7 +2452,7 @@ static const struct snd_soc_dapm_widget rt5647_dapm_widgets[] = {
 
 	/* Input Side */
 	/* micbias */
-	SND_SOC_DAPM_SUPPLY("micbias1", RT5647_PWR_ANLG2,
+	SND_SOC_DAPM_SUPPLY("micbias1", SND_SOC_NOPM,
 		RT5647_PWR_MB1_BIT, 0, NULL, 0),
 	SND_SOC_DAPM_SUPPLY("micbias2", RT5647_PWR_ANLG2,
 		RT5647_PWR_MB2_BIT, 0, NULL, 0),
@@ -3761,7 +3768,7 @@ static int rt5647_set_bias_level(struct snd_soc_codec *codec,
 		snd_soc_write(codec, RT5647_PWR_MIXER, 0x0002);
 		snd_soc_write(codec, RT5647_PWR_ANLG1, 0x0000);
 #ifdef JD1_FUNC
-		snd_soc_write(codec, RT5647_PWR_ANLG2, 0x0004);
+		snd_soc_write(codec, RT5647_PWR_ANLG2, 0x0804);
 #else
 		snd_soc_write(codec, RT5647_PWR_ANLG2, 0x0000);
 #endif
@@ -3904,7 +3911,7 @@ static int rt5647_probe(struct snd_soc_codec *codec)
 
 #ifdef JD1_FUNC
 	snd_soc_update_bits(codec, RT5647_HPO_MIXER, 0x1000, 0x1000);
-	snd_soc_update_bits(codec, RT5647_PWR_ANLG2, 0x0004, 0x0004);
+	snd_soc_update_bits(codec, RT5647_PWR_ANLG2, 0x0804, 0x0804);
 #endif
 	snd_soc_update_bits(codec, RT5647_PWR_ANLG1, RT5647_LDO_SEL_MASK, 0x0);
 	snd_soc_update_bits(codec, RT5647_PWR_MIXER, RT5647_PWR_LDO2, RT5647_PWR_LDO2);

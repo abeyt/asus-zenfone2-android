@@ -3687,20 +3687,19 @@ static __init int init_m10mo(void)
     switch (Read_PROJ_ID()) {
 
 	case PROJ_ID_ZX550ML:
-	case PROJ_ID_ZE551ML:
-	case PROJ_ID_ZE550ML:
 		pr_info("Project ID is ZX550ML, M10MO init...\n");
 		return i2c_add_driver(&m10mo_driver);
 	break;
-
+	case PROJ_ID_ZE551ML:
+	case PROJ_ID_ZE550ML:
 	case PROJ_ID_ZE500ML:
 	case PROJ_ID_ZR550ML:
 		pr_info("Project ID is NOT ZX550ML, M10MO exit...\n");
-		return -1;
+		return 0;
 	break;
 	default:
 		pr_info("Project ID is NOT ZX550ML, M10MO exit...\n");
-		return -1;
+		return 0;
 	break;
     }//end switch
 }

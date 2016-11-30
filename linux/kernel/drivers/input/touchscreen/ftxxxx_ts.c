@@ -1386,31 +1386,31 @@ static int ftxxxx_ts_probe(struct i2c_client *client, const struct i2c_device_id
 	ftxxxx_write_reg(client, 0xd8, 0x00);
 	if (Read_PROJ_ID() == PROJ_ID_ZE550ML)
 	{
-		ftxxxx_write_reg(client, 0xda, 0x14);
+		ftxxxx_write_reg(client, 0xda, 0x64);
 		ftxxxx_write_reg(client, 0xdb, 0x00);
 		ftxxxx_write_reg(client, 0xdc, 0x40);
 		ftxxxx_write_reg(client, 0xdd, 0x05);
-		ftxxxx_write_reg(client, 0xde, 0x14);
+		ftxxxx_write_reg(client, 0xde, 0x64);
 		ftxxxx_write_reg(client, 0xdf, 0x00);
-		ftxxxx_write_reg(client, 0xe0, 0xbc);
+		ftxxxx_write_reg(client, 0xe0, 0x6c);
 		ftxxxx_write_reg(client, 0xe1, 0x02);
-		ftxxxx_write_reg(client, 0xe2, 0x19);
-		ftxxxx_write_reg(client, 0xe3, 0x08);
+		ftxxxx_write_reg(client, 0xe2, 0x20);
+		ftxxxx_write_reg(client, 0xe3, 0x10);
 		ftxxxx_write_reg(client, 0xe4, 0x3e);
 		ftxxxx_write_reg(client, 0xe5, 0x06);
 	}
 	else if (Read_PROJ_ID() == PROJ_ID_ZE551ML)
 	{
-		ftxxxx_write_reg(client, 0xda, 0x1e);
+		ftxxxx_write_reg(client, 0xda, 0x96);
 		ftxxxx_write_reg(client, 0xdb, 0x00);
 		ftxxxx_write_reg(client, 0xdc, 0xe0);
 		ftxxxx_write_reg(client, 0xdd, 0x07);
-		ftxxxx_write_reg(client, 0xde, 0x1e);
+		ftxxxx_write_reg(client, 0xde, 0x96);
 		ftxxxx_write_reg(client, 0xdf, 0x00);
-		ftxxxx_write_reg(client, 0xe0, 0x1a);
-		ftxxxx_write_reg(client, 0xe1, 0x04);
-		ftxxxx_write_reg(client, 0xe2, 0x25);
-		ftxxxx_write_reg(client, 0xe3, 0x0c);
+		ftxxxx_write_reg(client, 0xe0, 0xa2);
+		ftxxxx_write_reg(client, 0xe1, 0x03);
+		ftxxxx_write_reg(client, 0xe2, 0x30);
+		ftxxxx_write_reg(client, 0xe3, 0x18);
 		ftxxxx_write_reg(client, 0xe4, 0x3e);
 		ftxxxx_write_reg(client, 0xe5, 0x06);
 	}
@@ -1584,31 +1584,31 @@ static void ftxxxx_ts_resume(struct early_suspend *handler)
 	ftxxxx_write_reg(ts->client, 0xd8, 0x00);
 	if (Read_PROJ_ID() == PROJ_ID_ZE550ML)
 	{
-		ftxxxx_write_reg(ts->client, 0xda, 0x14);
+		ftxxxx_write_reg(ts->client, 0xda, 0x64);
 		ftxxxx_write_reg(ts->client, 0xdb, 0x00);
 		ftxxxx_write_reg(ts->client, 0xdc, 0x40);
 		ftxxxx_write_reg(ts->client, 0xdd, 0x05);
-		ftxxxx_write_reg(ts->client, 0xde, 0x14);
+		ftxxxx_write_reg(ts->client, 0xde, 0x64);
 		ftxxxx_write_reg(ts->client, 0xdf, 0x00);
-		ftxxxx_write_reg(ts->client, 0xe0, 0xbc);
+		ftxxxx_write_reg(ts->client, 0xe0, 0x6c);
 		ftxxxx_write_reg(ts->client, 0xe1, 0x02);
-		ftxxxx_write_reg(ts->client, 0xe2, 0x19);
-		ftxxxx_write_reg(ts->client, 0xe3, 0x08);
+		ftxxxx_write_reg(ts->client, 0xe2, 0x20);
+		ftxxxx_write_reg(ts->client, 0xe3, 0x10);
 		ftxxxx_write_reg(ts->client, 0xe4, 0x3e);
 		ftxxxx_write_reg(ts->client, 0xe5, 0x06);
 	}
 	else if (Read_PROJ_ID() == PROJ_ID_ZE551ML)
 	{
-		ftxxxx_write_reg(ts->client, 0xda, 0x1e);
+		ftxxxx_write_reg(ts->client, 0xda, 0x96);
 		ftxxxx_write_reg(ts->client, 0xdb, 0x00);
 		ftxxxx_write_reg(ts->client, 0xdc, 0xe0);
 		ftxxxx_write_reg(ts->client, 0xdd, 0x07);
-		ftxxxx_write_reg(ts->client, 0xde, 0x1e);
+		ftxxxx_write_reg(ts->client, 0xde, 0x96);
 		ftxxxx_write_reg(ts->client, 0xdf, 0x00);
-		ftxxxx_write_reg(ts->client, 0xe0, 0x1a);
-		ftxxxx_write_reg(ts->client, 0xe1, 0x04);
-		ftxxxx_write_reg(ts->client, 0xe2, 0x25);
-		ftxxxx_write_reg(ts->client, 0xe3, 0x0c);
+		ftxxxx_write_reg(ts->client, 0xe0, 0xa2);
+		ftxxxx_write_reg(ts->client, 0xe1, 0x03);
+		ftxxxx_write_reg(ts->client, 0xe2, 0x30);
+		ftxxxx_write_reg(ts->client, 0xe3, 0x18);
 		ftxxxx_write_reg(ts->client, 0xe4, 0x3e);
 		ftxxxx_write_reg(ts->client, 0xe5, 0x06);
 	}
