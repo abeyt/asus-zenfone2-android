@@ -4306,6 +4306,7 @@ static int atomisp_set_fmt_to_isp(struct video_device *vdev,
 			unsigned int source_pad)
 {
 	struct camera_mipi_info *mipi_info;
+	static enum atomisp_input_format input_format_temporary_keep;
 	struct atomisp_device *isp = video_get_drvdata(vdev);
 	struct atomisp_sub_device *asd = atomisp_to_video_pipe(vdev)->asd;
 	const struct atomisp_format_bridge *format;
@@ -4344,6 +4345,18 @@ static int atomisp_set_fmt_to_isp(struct video_device *vdev,
 		if (!mipi_info) {
 			dev_err(isp->dev, "mipi_info is NULL\n");
 			return -EINVAL;
+		}
+
+		if (0 == strncmp(isp->inputs[asd->input_curr].camera->name, "m10mo", strlen("m10mo"))){
+			if(pix->pixelformat == V4L2_PIX_FMT_SGBRG10){
+			    printk(KERN_INFO "ASUSBSP --- To capture RAW10, WA for m10mo on ASUS ZX551ML! \n");
+			    input_format_temporary_keep = mipi_info->input_format;
+				mipi_info->input_format = ATOMISP_INPUT_FORMAT_RAW_10;
+			}else if (pix->pixelformat == V4L2_PIX_FMT_NV12 && input_format_temporary_keep != 0){
+			    printk(KERN_INFO "ASUSBSP --- To preview after capturing RAW10, WA for m10mo on ASUS ZX551ML! \n");
+				mipi_info->input_format = input_format_temporary_keep;
+				input_format_temporary_keep = 0;
+			}
 		}
 		if (atomisp_set_sensor_mipi_to_isp(asd, stream_index,
 					mipi_info))

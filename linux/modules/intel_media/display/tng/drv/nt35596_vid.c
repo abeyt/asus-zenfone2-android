@@ -612,9 +612,22 @@ static u8 cm3_103[] = {0x07, 0x00};
 static u8 cm3_104[] = {0x15, 0x1A};
 static u8 cm3_105[] = {0x16, 0x10};
 static u8 cm3_106[] = {0x17, 0x10};
-static u8 cm3_107[] = {0x53, 0x12};
-static u8 cm3_108[] = {0x7E, 0x1F};
+static u8 cm3_107[] = {0x53, 0x06};
+static u8 cm3_108[] = {0x7E, 0x05};
+static u8 cm3_109[] = {0x7F, 0x20};
 
+/* Display noise */
+static u8 cm3_110[] = {0x86, 0x1B};
+static u8 cm3_111[] = {0x87, 0x39};
+static u8 cm3_112[] = {0x88, 0x1B};
+static u8 cm3_113[] = {0x89, 0x39};
+static u8 cm3_114[] = {0xB5, 0x20};
+static u8 cm3_115[] = {0x8C, 0x01};
+static u8 cm3_116[] = {0x4D, 0x00};
+static u8 cm3_117[] = {0x4E, 0x00};
+static u8 cm3_118[] = {0x4F, 0x11};
+static u8 cm3_119[] = {0x50, 0x11};
+static u8 cm3_120[] = {0x54, 0x70};
 
 /* ====Power on commnad==== */
 static struct mipi_dsi_cmd ze551ml_power_on_table[] = {
@@ -1121,26 +1134,8 @@ static struct mipi_dsi_cmd ze551ml_AUO_power_on_table[] = {
 	{0, sizeof(cm3_001), cm3_001},
 	{0, sizeof(cm3_002), cm3_002},
 	{0, sizeof(cm3_003), cm3_003},
-	{0, sizeof(cm3_004), cm3_004},
-	{0, sizeof(cm3_005), cm3_005},
-	{0, sizeof(cm3_006), cm3_006},
-	{0, sizeof(cm3_007), cm3_007},
-	{0, sizeof(cm3_008), cm3_008},
-	{0, sizeof(cm3_009), cm3_009},
-	{0, sizeof(cm3_010), cm3_010},
-	{0, sizeof(cm3_011), cm3_011},
-	{0, sizeof(cm3_012), cm3_012},
-	{0, sizeof(cm3_013), cm3_013},
-	{0, sizeof(cm3_014), cm3_014},
-	{0, sizeof(cm3_015), cm3_015},
-	{0, sizeof(cm3_016), cm3_016},
-	{0, sizeof(cm3_017), cm3_017},
-	{0, sizeof(cm3_018), cm3_018},
-	{0, sizeof(cm3_019), cm3_019},
 	{0, sizeof(cm3_020), cm3_020},
 	{0, sizeof(cm3_021), cm3_021},
-	{0, sizeof(cm3_022), cm3_022},
-	{0, sizeof(cm3_023), cm3_023},
 	{0, sizeof(cm3_101), cm3_101},
 	{0, sizeof(cm3_102), cm3_102},
 	{0, sizeof(cm3_103), cm3_103},
@@ -1149,9 +1144,18 @@ static struct mipi_dsi_cmd ze551ml_AUO_power_on_table[] = {
 	{0, sizeof(cm3_106), cm3_106},
 	{0, sizeof(cm3_107), cm3_107},
 	{0, sizeof(cm3_108), cm3_108},
-	{0, sizeof(cm3_024), cm3_024},
-	{0, sizeof(cm3_025), cm3_025},
-	{0, sizeof(cm3_026), cm3_026},
+	{0, sizeof(cm3_109), cm3_109},
+        {0, sizeof(cm3_110), cm3_110},
+        {0, sizeof(cm3_111), cm3_111},
+        {0, sizeof(cm3_112), cm3_112},
+        {0, sizeof(cm3_113), cm3_113},
+        {0, sizeof(cm3_114), cm3_114},
+        {0, sizeof(cm3_115), cm3_115},
+        {0, sizeof(cm3_116), cm3_116},
+        {0, sizeof(cm3_117), cm3_117},
+        {0, sizeof(cm3_118), cm3_118},
+        {0, sizeof(cm3_119), cm3_119},
+        {0, sizeof(cm3_120), cm3_120},
 	{0, sizeof(cm3_027), cm3_027},
 };
 

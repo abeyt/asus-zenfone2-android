@@ -668,9 +668,9 @@ static int sky81296_setup(struct sky81296 *flash)
 			flash->pdata->input_voltage_hysteresis > 4000)
 		return -EINVAL;
 
-	value |= ((flash->pdata->input_voltage_hysteresis - 2900) / 100)
+	value |= (((flash->pdata->input_voltage_hysteresis - 2900) / 100) + 1 )
 			<< CTZ(SKY81296_VINHYS);
-
+	//Voltage Monitor Hysteresis = 3.4V/Input Voltage Monitor Threshold = 3.3V
 	ret = regmap_write(map, SKY81296_CONTROL3, value);
 
 
@@ -923,6 +923,7 @@ err_gpio_enable:
 	case PROJ_ID_ZE551ML:
 	case PROJ_ID_ZR550ML:
 	case PROJ_ID_ZE500ML:
+	case PROJ_ID_ZE551ML_CKD:
 
 	switch (Read_HW_ID()) {
 		case HW_ID_EVB:
@@ -985,6 +986,7 @@ static int sky81296_gpio_uninit(struct i2c_client *client)
 	case PROJ_ID_ZE551ML:
 	case PROJ_ID_ZR550ML:
 	case PROJ_ID_ZE500ML:
+	case PROJ_ID_ZE551ML_CKD:
 
 	switch (Read_HW_ID()) {
 		case HW_ID_EVB:
@@ -1143,6 +1145,7 @@ static int sky81296_probe(struct i2c_client *client,
 	case PROJ_ID_ZE551ML:
 	case PROJ_ID_ZR550ML:
 	case PROJ_ID_ZE500ML:
+	case PROJ_ID_ZE551ML_CKD:
 
 	switch (Read_HW_ID()) {
 		case HW_ID_EVB:

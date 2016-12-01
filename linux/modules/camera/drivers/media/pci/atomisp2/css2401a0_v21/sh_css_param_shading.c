@@ -280,6 +280,9 @@ prepare_shading_table(const struct ia_css_shading_table *in_table,
 	   shading correction is performed in the bayer domain (before bayer
 	   down scaling). */
 #if defined(USE_INPUT_SYSTEM_VERSION_2401)
+	if(2*ISP_VEC_NELEMS == 0){
+		printk("FATAL!! @%s ISP_VEC_NELEMS = 0 !? \n",__func__);
+	}
 	padded_width = CEIL_MUL(binary->effective_in_frame_res.width + 2*ISP_VEC_NELEMS,
 					2*ISP_VEC_NELEMS);
 #endif
@@ -287,7 +290,9 @@ prepare_shading_table(const struct ia_css_shading_table *in_table,
 	input_width   = binary->in_frame_info.res.width;
 	left_padding  = binary->left_padding;
 	left_cropping = (binary->info->sp.pipeline.left_cropping == 0) ? 0 : 2*ISP_VEC_NELEMS;
-
+	if(sc_scale_factors_list[bds_factor].denominator == 0 || sc_scale_factors_list[bds_factor].numerator == 0){
+		printk("FATAL!! @%s [%d](%d,%d)\n",__func__,bds_factor,sc_scale_factors_list[bds_factor].denominator,sc_scale_factors_list[bds_factor].numerator);
+	}
 	left_padding  = (left_padding + binary->info->sp.pipeline.left_cropping) * sc_scale_factors_list[bds_factor].numerator / sc_scale_factors_list[bds_factor].denominator - binary->info->sp.pipeline.left_cropping;
 	right_padding = (binary->internal_frame_info.res.width - binary->effective_in_frame_res.width * sc_scale_factors_list[bds_factor].denominator / sc_scale_factors_list[bds_factor].numerator - left_cropping) * sc_scale_factors_list[bds_factor].numerator / sc_scale_factors_list[bds_factor].denominator;
 	top_padding = binary->info->sp.pipeline.top_cropping * sc_scale_factors_list[bds_factor].numerator / sc_scale_factors_list[bds_factor].denominator - binary->info->sp.pipeline.top_cropping;

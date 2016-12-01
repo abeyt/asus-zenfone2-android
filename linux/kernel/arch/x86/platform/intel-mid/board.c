@@ -254,6 +254,9 @@ struct devs_id __initconst device_ids[] = {
 #ifdef CONFIG_BATTERY_MM8033
 	{"mm8033_batt", SFI_DEV_TYPE_I2C, 0, &no_platform_data, NULL},
 #endif
+#ifdef CONFIG_BATTERY_MAX17058
+	{"max17058_batt", SFI_DEV_TYPE_I2C, 0, &no_platform_data, NULL},
+#endif
 #ifdef CONFIG_LEDS_ASUS
 	{"tca6507", SFI_DEV_TYPE_I2C, 0, &asus_led_platform_data, NULL},
 #endif

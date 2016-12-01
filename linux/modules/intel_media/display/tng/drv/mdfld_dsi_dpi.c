@@ -39,6 +39,8 @@
 #define KEEP_UNUSED_CODE 0
 
 struct mdfld_dsi_config *panel_reset_dsi_config;
+struct mdfld_dsi_dpi_output *dpi_output_reset;
+
 
 static
 u16 mdfld_dsi_dpi_to_byte_clock_count(int pixel_clock_count,
@@ -1318,7 +1320,62 @@ struct mdfld_dsi_encoder *mdfld_dsi_dpi_init(struct drm_device *dev,
 	dev_priv->b_dsr_enable_config = true;
 #endif /*CONFIG_MDFLD_DSI_DSR*/
 
+	dpi_output_reset = dpi_output;
+
 	PSB_DEBUG_ENTRY("successfully\n");
 
 	return &dpi_output->base;
 }
+
+void mdfld_reset_dpi_panel_handler_work(struct work_struct *work)
+{
+	struct drm_psb_private *dev_priv =
+		container_of(work, struct drm_psb_private, reset_panel_work);
+	struct mdfld_dsi_config *dsi_config = NULL;
+	struct panel_funcs *p_funcs  = NULL;
+	struct drm_device *dev;
+
+	dsi_config = dev_priv->dsi_configs[0];
+
+	if (!dsi_config || !dpi_output_reset)
+		return;
+	dev = dsi_config->dev;
+
+	/*disable ESD when HDMI connected*/
+	if (hdmi_state)
+		return;
+
+	PSB_DEBUG_ENTRY("\n");
+
+	p_funcs = dpi_output_reset->p_funcs;
+	if (p_funcs) {
+		mutex_lock(&dsi_config->context_lock);
+
+		if (!dsi_config->dsi_hw_context.panel_on) {
+			DRM_INFO("don't reset panel when panel is off\n");
+			mutex_unlock(&dsi_config->context_lock);
+			return;
+		}
+
+		DRM_INFO("Starts panel reset\n");
+		/*
+		 * since panel is in abnormal state,
+		 * we do a power off/on first
+		 */
+		if (__dpi_panel_power_off(dsi_config, p_funcs))
+			DRM_INFO("failed to power off dpi panel\n");
+
+		if (__dpi_panel_power_on(dsi_config, p_funcs, dpi_output_reset->first_boot)) {
+			DRM_ERROR("failed to power on dpi panel\n");
+			mutex_unlock(&dsi_config->context_lock);
+			return;
+		}
+
+		mutex_unlock(&dsi_config->context_lock);
+
+		DRM_INFO("%s: End panel reset\n", __func__);
+	} else {
+		DRM_INFO("%s invalid panel init\n", __func__);
+	}
+}
+

@@ -31,8 +31,8 @@ static int m10mo_set_high_speed(struct v4l2_subdev *sd)
 
 	dev_dbg(&client->dev, "%s: enter\n", __func__);
 
-	if (dev->mode != M10MO_PARAM_SETTING_MODE &&
-		dev->mode != M10MO_PARAMETER_MODE) {
+	if (dev->cmd != M10MO_CAMERA_START &&
+		dev->cmd != M10MO_PARAMETER_MODE_REQUEST_CMD) {
 		/*
 		 * We should switch to param mode first and
 		 * reset all the parameters.
@@ -69,8 +69,8 @@ static int m10mo_set_high_speed(struct v4l2_subdev *sd)
 	if (ret)
 		goto out;
 	/* Go to Monitor mode and output YUV Data */
-	ret = m10mo_request_mode_change(sd,
-			M10MO_MONITOR_MODE_HIGH_SPEED);
+	ret = m10mo_request_cmd_effect(sd,
+			M10MO_MONITOR_MODE_HIGH_SPEED, NULL);
 	if (ret)
 		goto out;
 

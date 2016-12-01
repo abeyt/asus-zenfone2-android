@@ -65,7 +65,9 @@
 
 #define I2C_DUMP_SIZE	     0x20 /* keep as power of 2 values */
 #define FW_SIZE		     0x00200000
+#define FW_INFO_SIZE         0x00000080
 #define FLASH_BLOCK_SIZE     0x10000
+#define FLASH_SECTOR_SIZE     0x1000
 #define SIO_BLOCK_SIZE	     8192
 #define DUMP_BLOCK_SIZE      0x1000
 
@@ -79,6 +81,8 @@
 #define PROGRAMMING_TIMEOUT (15000 / ONE_WAIT_LOOP_TIME)
 #define CHECKSUM_TIMEOUT   (5000 / ONE_WAIT_LOOP_TIME)
 #define STATE_TRANSITION_TIMEOUT (3000 / ONE_WAIT_LOOP_TIME)
+
+#define NEW_FLASHFW_FLOW
 
 /* Tables for m10mo pin configurations */
 static const u8 buf_port_settings0_m10mo[] = {
@@ -126,6 +130,16 @@ static int m10mo_set_flash_address(struct v4l2_subdev *sd, u32 addr)
 	ret = m10mo_writel(sd, CATEGORY_FLASHROM, REG_FLASH_ADD, addr);
 	if (ret)
 		dev_err(&client->dev, "Set flash address failed\n");
+	return ret;
+}
+
+static int m10mo_set_checksum_size(struct v4l2_subdev *sd, u32 size)
+{
+	struct i2c_client *client = v4l2_get_subdevdata(sd);
+	int ret;
+	ret = m10mo_writel(sd, CATEGORY_FLASHROM, REG_CHECK_SUM_SIZE, size);
+	if (ret)
+		dev_err(&client->dev, "Set checksum size = %x\n",size);
 	return ret;
 }
 
@@ -936,7 +950,16 @@ int m10mo_fw_checksum(struct m10mo_device *dev, u16 *result)
 		goto leave;
 
 	/* request checksum */
+#ifndef NEW_FLASHFW_FLOW
 	err = m10mo_writeb(sd, CATEGORY_FLASHROM, REG_FLASH_CHECK, 4);
+#else
+
+	err = m10mo_set_checksum_size(sd, 0x0019c400);
+	if (err)
+		goto leave;
+
+	err = m10mo_writeb(sd, CATEGORY_FLASHROM, REG_FLASH_CHECK, 2);//partial update
+#endif
 	if (err) {
 		dev_err(&client->dev, "Request checksum failed\n");
 		goto leave;
@@ -983,6 +1006,47 @@ int m10mo_sector_erase_flash(struct m10mo_device *dev, u32 sector_addr)
 
 	ret = m10mo_wait_operation_complete(sd, REG_FLASH_ERASE,
 					    SECTOR_ERASE_TIMEOUT);
+	return ret;
+}
+
+
+int m10mo_block_erase_flash(struct m10mo_device *dev, u32 block_addr, bool initRAM)
+{
+	struct v4l2_subdev *sd = &dev->sd;
+	struct i2c_client *client = v4l2_get_subdevdata(sd);
+	int ret;
+
+	/*
+	 * Preconditions - system is already in flash access mode,
+	 * plls configured
+	 */
+
+if(!initRAM){
+	/* Setup internal RAM */
+	ret = m10mo_writeb(sd, CATEGORY_FLASHROM, REG_RAM_START,
+			   REG_RAM_START_SRAM);
+	if (ret) {
+		dev_err(&client->dev, "Ram setup failed\n");
+		return ret;
+	}
+	mdelay(10);
+}
+	/* Set start address to 0*/
+	ret = m10mo_set_flash_address(sd, block_addr);
+	if (ret)
+		return ret;
+	/* chip erase command */
+	ret = m10mo_writeb(sd, CATEGORY_FLASHROM, REG_FLASH_ERASE,
+			   REG_FLASH_ERASE_BLOCK64k_ERASE);
+
+	if (ret) {
+		dev_err(&client->dev, "Chip erase cmd failed\n");
+		return ret;
+	}
+	ret = m10mo_wait_operation_complete(sd, REG_FLASH_ERASE,
+					    CHIP_ERASE_TIMEOUT);
+
+
 	return ret;
 }
 
@@ -1037,7 +1101,7 @@ int m10mo_flash_write_block(struct m10mo_device *dev, u32 target_addr,
 		return ret;
 
 	/* Set block size of 64k == 0 as reg value */
-	ret = m10mo_writew(sd, CATEGORY_FLASHROM, REG_FLASH_BYTE, 0);
+	ret = m10mo_writew(sd, CATEGORY_FLASHROM, REG_FLASH_BYTE, block_size);
 	if (ret) {
 		dev_err(&client->dev, "Set flash block size failed\n");
 		return ret;
@@ -1166,7 +1230,7 @@ static int m10mo_sio_write(struct m10mo_device *m10mo_dev, u8 *buf)
 }
 
 static const struct firmware *
-m10mo_load_firmware(struct m10mo_device *m10mo_dev)
+m10mo_load_firmware(struct m10mo_device *m10mo_dev, const char * name)
 {
 	struct v4l2_subdev *sd = &m10mo_dev->sd;
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
@@ -1174,28 +1238,30 @@ m10mo_load_firmware(struct m10mo_device *m10mo_dev)
 	int i, ret;
 	u16 *fw_ptr, csum = 0;
 
-	ret = request_firmware(&fw, M10MO_FW_NAME, &client->dev);
+	ret = request_firmware(&fw, name, &client->dev);
 	if (ret) {
 		dev_err(&client->dev,
 			"Error %d while requesting firmware %s\n",
-			ret, M10MO_FW_NAME);
+			ret, name);
 		return NULL;
 	}
 
-	if (fw->size != FW_SIZE) {
+	if (!(fw->size == FW_SIZE || fw->size == FW_INFO_SIZE)) {
 		dev_err(&client->dev,
-			"Illegal FW size detected\n");
+			"Illegal FW size detected  %s %x\n",name, (int)fw->size);
 		release_firmware(fw);
 		return NULL;
 	}
 
-	fw_ptr = (u16 *)fw->data;
-	for (i = 0; i < FW_SIZE/2; i++, fw_ptr++)
-		csum += be16_to_cpup(fw_ptr);
+	if(fw->size == FW_SIZE){
+		fw_ptr = (u16 *)fw->data;
+		for (i = 0; i < FW_SIZE/2; i++, fw_ptr++)
+			csum += be16_to_cpup(fw_ptr);
 
-	if (csum) {
-		dev_err(&client->dev,
-			"Illegal FW csum: %d\n", csum);
+		if (csum) {
+			dev_err(&client->dev,
+				"Illegal %s FW csum: %d\n", name, csum);
+		}
 	}
 
 	return fw;
@@ -1207,24 +1273,75 @@ int m10mo_program_device(struct m10mo_device *m10mo_dev)
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
 	int ret = -ENODEV;
 	u32 i;
+
+#ifdef NEW_FLASHFW_FLOW
+	int j, start_addr;
+	const struct firmware *fw_info;
+#endif
 	const struct firmware *fw;
 
-	dev_info(&client->dev, "Start FW update\n");
+	dev_info(&client->dev, "=======Start FW update=======\n");
 
-	fw = m10mo_load_firmware(m10mo_dev);
+	fw = m10mo_load_firmware(m10mo_dev, M10MO_FW_NAME);
 	if (!fw)
 		return -ENOENT;
-
+	dev_info(&client->dev, "load %s ok!\n", M10MO_FW_NAME);
+#ifdef NEW_FLASHFW_FLOW
+	fw_info = m10mo_load_firmware(m10mo_dev, "FW_INFO.bin");
+	if (!fw_info)
+		return -ENOENT;
+	dev_info(&client->dev, "load %s ok!\n", "FW_INFO.bin");
+#endif
 	ret = m10mo_to_fw_access_mode(m10mo_dev);
 	if (ret)
 		goto release_fw;
-
+	dev_info(&client->dev, "m10mo_to_fw_access_mode ok\n");
+#ifndef NEW_FLASHFW_FLOW
 	ret = m10mo_chip_erase_flash(m10mo_dev);
 	if (ret) {
 		dev_err(&client->dev, "Erase failed\n");
 		goto release_fw;
 	}
+#else
+	dev_info(&client->dev, "======Start to erase=======\n\n");
 
+	start_addr = 0x0;
+	dev_info(&client->dev, "erase block=25 addr=%x size=1600k bytes\n", start_addr);
+	for(j=0;j<25;j++){
+		dev_info(&client->dev, "count=%d erase block addr=%x size=0x10000\n", j+1,start_addr);
+		ret = m10mo_block_erase_flash(m10mo_dev, start_addr, j);
+		start_addr += 0x10000;//64k byte
+		if (ret) {
+			dev_err(&client->dev, "addr=%x Erase block failed\n", start_addr);
+			goto release_fw;
+		}
+	}
+	dev_err(&client->dev, "erase block=25 size=1600k bytes ok\n");
+	dev_info(&client->dev, "==================================\n");
+	start_addr = 0x190000;
+	dev_info(&client->dev, "erase sector addr=%x size=52k bytes\n", start_addr);
+	for(j=0;j<13;j++){
+		dev_info(&client->dev, "count=%d erase sector addr=%x size=0x1000\n", j+1,start_addr);
+		ret = m10mo_sector_erase_flash(m10mo_dev, start_addr);
+		start_addr += 0x1000;
+		if (ret) {
+			dev_err(&client->dev, "addr=%x Erase sector failed\n", start_addr);
+			goto release_fw;
+		}
+	}
+	dev_err(&client->dev, "erase sector=13 size=52k bytes ok\n");
+	dev_info(&client->dev, "==================================\n");
+	start_addr = 0x1ff000;
+	dev_info(&client->dev, "erase sector addr=%x size=4k bytes\n", start_addr);
+	dev_info(&client->dev, "count=0 erase sector addr=%x size=0x1000\n",start_addr);
+	ret = m10mo_sector_erase_flash(m10mo_dev, start_addr);
+	if (ret) {
+		dev_err(&client->dev, "addr=%x Erase sector failed\n", start_addr);
+		goto release_fw;
+	}
+	dev_err(&client->dev, "erase sector=1 size=4k bytes ok\n");
+
+#endif
 	if (m10mo_dev->spi && m10mo_dev->spi->spi_enabled) {
 		ret = m10mo_sio_write(m10mo_dev, (u8 *)fw->data);
 		if (ret) {
@@ -1232,6 +1349,7 @@ int m10mo_program_device(struct m10mo_device *m10mo_dev)
 			goto release_fw;
 		}
 	} else {
+#ifndef NEW_FLASHFW_FLOW
 		for (i = 0 ; i < FW_SIZE; i = i + FLASH_BLOCK_SIZE) {
 			dev_err(&client->dev, "Writing block %d\n", i / FLASH_BLOCK_SIZE);
 			ret = m10mo_flash_write_block(m10mo_dev,
@@ -1242,9 +1360,50 @@ int m10mo_program_device(struct m10mo_device *m10mo_dev)
 				goto release_fw;
 			}
 		}
+#else
+	dev_info(&client->dev, "======Start to write=======\n\n");
+
+	dev_err(&client->dev, "write block=25 size=1600k bytes\n");
+	for (i = 0 ; i < 0x190000; i = i + FLASH_BLOCK_SIZE) {
+		dev_err(&client->dev, "count=%d, Writing block addr=%x\n",i / FLASH_BLOCK_SIZE, i);
+		ret = m10mo_flash_write_block(m10mo_dev,
+			i, (u8 *)&fw->data[i],
+			FLASH_BLOCK_SIZE);
+		if (ret) {
+			dev_err(&client->dev, "Flash write failed\n");
+			goto release_fw;
+		}
 	}
 
-	dev_info(&client->dev, "Flashing done\n");
+	dev_err(&client->dev, "write block=25 size=1600k bytes ok\n");
+	dev_info(&client->dev, "==================================\n");
+	dev_err(&client->dev, "write sector=12 size=49k bytes\n");
+	dev_err(&client->dev, "count=1, Writing sector addr=0x190000 size=0xC400\n");
+	ret = m10mo_flash_write_block(m10mo_dev,
+			0x190000, (u8 *)&fw->data[0x190000],
+			0xC400);//49k bytes
+	if (ret) {
+		dev_err(&client->dev, "Flash write failed\n");
+		goto release_fw;
+	}
+#if 1
+	dev_err(&client->dev, "write sector=12 size=49k bytes ok\n");
+	dev_info(&client->dev, "==================================\n");
+	dev_err(&client->dev, "write sector=1 size=128 bytes\n");
+	dev_err(&client->dev, "count=1, Writing sector addr=0x1ff000 size=0x80\n");
+	ret = m10mo_flash_write_block(m10mo_dev,
+			0x1ff000, (u8 *)&fw_info->data[0],
+			0x80);//128 bytes
+	if (ret) {
+		dev_err(&client->dev, "Flash write failed\n");
+		goto release_fw;
+	}
+	dev_err(&client->dev, "write sector=1 size=128 bytes ok\n");
+#endif
+#endif
+	}
+
+	dev_info(&client->dev, "=======Flashing done=======\n");
 	msleep(50);
 
 	ret = 0;

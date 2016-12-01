@@ -51,6 +51,7 @@
 #include <asm/intel-mid.h>
 
 #include "mdfld_dsi_dbi.h"
+#include "mdfld_dsi_dpi.h"
 #ifdef CONFIG_MID_DSI_DPU
 #include "mdfld_dsi_dbi_dpu.h"
 #endif
@@ -1211,63 +1212,61 @@ bool mrst_get_vbt_data(struct drm_psb_private *dev_priv)
 
 	strncpy(panel_name, panel_desc, PANEL_NAME_MAX_LEN);
 
-	if (Read_PROJ_ID() == PROJ_ID_ZE500ML) {
-		switch (Read_LCD_ID()) {
-			case ZE500ML_LCD_ID_CTP:
-			case ZE500ML_LCD_ID_HSD:
-			case ZE500ML_LCD_ID_TM:
-				dev_priv->panel_id = OTM1284A_VID;
-				strncpy(panel_name_id, "OTM1284A", strlen("OTM1284A"));
-				break;
-		}
-	} else if (Read_PROJ_ID() == PROJ_ID_ZE550ML) {
-		switch (Read_LCD_ID()) {
-			case ZE550ML_LCD_ID_OTM_TM:
-			case ZE550ML_LCD_ID_OTM_CPT:
-				dev_priv->panel_id = OTM1284A_VID;
-				strncpy(panel_name_id, "OTM1284A", strlen("OTM1284A"));
-				break;
-		}
-	} else if (Read_PROJ_ID() == PROJ_ID_ZE551ML) {
-		switch (Read_LCD_ID()){
-			case ZE551ML_LCD_ID_NT_TM:
-				dev_priv->panel_id = NT35596_VID;
-				strncpy(panel_name_id, "NT35596", strlen("NT35596"));
-				break;
-			case ZE551ML_LCD_ID_NT_AUO:
-				dev_priv->panel_id = NT35596_VID;
-				strncpy(panel_name_id, "NT35596", strlen("NT35596"));
-				break;
-			case ZE551ML_LCD_ID_OTM_INX:
-				dev_priv->panel_id = OTM1901A_VID;
-				strncpy(panel_name_id, "OTM1901A", strlen("OTM1901A"));
-				break;
-		}
-	} else if (Read_PROJ_ID() == PROJ_ID_ZR550ML) {
-		switch (Read_LCD_ID()){
-			case ZR550ML_LCD_ID_NT_TM:
-				dev_priv->panel_id = NT35596_VID;
-				strncpy(panel_name_id, "NT35596", strlen("NT35596"));
-				break;
-			case ZR550ML_LCD_ID_OTM_INX:
-				dev_priv->panel_id = OTM1901A_VID;
-				strncpy(panel_name_id, "OTM1901A", strlen("OTM1901A"));
-				break;
-		}
-	} else if (Read_PROJ_ID() == PROJ_ID_ZX550ML) {
-		switch (Read_LCD_ID()){
-			case ZX550ML_LCD_ID_NT_TM:
-				dev_priv->panel_id = NT35596_VID;
-				strncpy(panel_name_id, "NT35596", strlen("NT35596"));
-				break;
-			case ZX550ML_LCD_ID_OTM_INX:
-				dev_priv->panel_id = OTM1901A_VID;
-				strncpy(panel_name_id, "OTM1901A", strlen("OTM1901A"));
-				break;
-		}
-	} else {
-		dev_priv->panel_id = OTM1284A_VID;
-		strncpy(panel_name_id, "OTM1284A", strlen("OTM1284A"));
+	switch(Read_PROJ_ID()) {
+		case PROJ_ID_ZE500ML:
+			switch (Read_LCD_ID()) {
+				case ZE500ML_LCD_ID_CTP:
+				case ZE500ML_LCD_ID_HSD:
+				case ZE500ML_LCD_ID_TM:
+					dev_priv->panel_id = OTM1284A_VID;
+					strncpy(panel_name_id, "OTM1284A", strlen("OTM1284A"));
+					break;
+			}
+			break;
+		case PROJ_ID_ZE550ML:
+			switch (Read_LCD_ID()) {
+				case ZE550ML_LCD_ID_OTM_TM:
+				case ZE550ML_LCD_ID_OTM_CPT:
+					dev_priv->panel_id = OTM1284A_VID;
+					strncpy(panel_name_id, "OTM1284A", strlen("OTM1284A"));
+					break;
+			}
+			break;
+		case PROJ_ID_ZE551ML:
+		case PROJ_ID_ZE551ML_CKD:
+		case PROJ_ID_ZE551ML_ESE:
+		case PROJ_ID_ZX550ML:
+			switch (Read_LCD_ID()){
+				case ZE551ML_LCD_ID_NT_TM:
+					dev_priv->panel_id = NT35596_VID;
+					strncpy(panel_name_id, "NT35596", strlen("NT35596"));
+					break;
+				case ZE551ML_LCD_ID_NT_AUO:
+					dev_priv->panel_id = NT35596_VID;
+					strncpy(panel_name_id, "NT35596", strlen("NT35596"));
+					break;
+				case ZE551ML_LCD_ID_OTM_INX:
+					dev_priv->panel_id = OTM1901A_VID;
+					strncpy(panel_name_id, "OTM1901A", strlen("OTM1901A"));
+					break;
+			}
+			break;
+		case PROJ_ID_ZR550ML:
+			switch (Read_LCD_ID()){
+				case ZR550ML_LCD_ID_NT_TM:
+					dev_priv->panel_id = NT35596_VID;
+					strncpy(panel_name_id, "NT35596", strlen("NT35596"));
+					break;
+				case ZR550ML_LCD_ID_OTM_INX:
+					dev_priv->panel_id = OTM1901A_VID;
+					strncpy(panel_name_id, "OTM1901A", strlen("OTM1901A"));
+					break;
+			}
+			break;
+		default:
+			dev_priv->panel_id = OTM1284A_VID;
+			strncpy(panel_name_id, "OTM1284A", strlen("OTM1284A"));
+			break;
 	}
 //	dev_priv->panel_id = PanelID;
 
@@ -1962,6 +1961,8 @@ static int psb_driver_load(struct drm_device *dev, unsigned long chipset)
 		INIT_WORK(&dev_priv->te_work, mdfld_te_handler_work);
 		INIT_WORK(&dev_priv->reset_panel_work,
 				mdfld_reset_panel_handler_work);
+	} else {
+		INIT_WORK(&dev_priv->reset_panel_work, mdfld_reset_dpi_panel_handler_work);
 	}
 	INIT_WORK(&dev_priv->vsync_event_work, mdfld_vsync_event_work);
 
@@ -3125,6 +3126,11 @@ static int psb_vsync_set_ioctl(struct drm_device *dev, void *data,
 				if (ret && (ret != -EINTR && ret != -EPERM)) {
 					DRM_ERROR("fail to get vsync on pipe %d, ret %d\n", pipe, ret);
 					vsync_state_dump(dev, pipe);
+
+					if (	dsi_config && dsi_config->dsi_hw_context.panel_on) {
+						printk("[DISP] RESET the panel\n");
+						schedule_work(&dev_priv->reset_panel_work);
+					}
 
 					if (!IS_ANN(dev)) {
 						if (pipe != 1 &&

@@ -675,6 +675,14 @@ void intel_dma_do_rx(struct uart_hsu_port *up, u32 int_sts)
 	int count;
 
 	trace_hsu_func_start(up->index, __func__);
+
+	if(!up->dma_inited)
+	{
+		dev_warn(up->dev, "%s DMA not init!\n", __func__);
+		trace_hsu_func_end(up->index, __func__, "notty");
+		return;
+	}
+
 	tty = tty_port_tty_get(&up->port.state->port);
 	if (!tty) {
 		trace_hsu_func_end(up->index, __func__, "notty");

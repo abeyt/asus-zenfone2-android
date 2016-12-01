@@ -65,6 +65,7 @@
 #include "pmic_ccsm.h"
 #if defined(CONFIG_A500CG_BATTERY_SMB347) || defined(CONFIG_SMB1357_CHARGER)
 #include "../../../kernel/drivers/power/ASUS_BATTERY/smb_external_include.h"
+#include <linux/HWVersion.h>
 #define SRCWAKECFG_ADDR       0x23
 extern int dcp_mode;
 #endif
@@ -100,6 +101,7 @@ static struct delayed_work 	sdp_work;
 static struct power_supply_cable_props g_cap = {0};
 #endif
 #if defined(CONFIG_A500CG_BATTERY_SMB347) || defined(CONFIG_SMB1357_CHARGER)
+extern int Read_PROJ_ID(void);
 enum power_supply_charger_cable_type usb_cable_status = POWER_SUPPLY_CHARGER_TYPE_NONE;
 static BLOCKING_NOTIFIER_HEAD(cable_status_notifier_list);
 /**
@@ -1376,7 +1378,7 @@ static int get_charger_type(void)
 static void sdp_report_queue(struct work_struct *work)
 {
 #if defined(CONFIG_SMB1357_CHARGER)
-	printk("%s: dcp_mode=%d\n", __func__, dcp_mode);
+	dev_info(chc.dev, "%s: smb1357 dcp_mode=%d, pmic chrg_type=%d\n", __func__, dcp_mode, g_cap.chrg_type);
 	if(dcp_mode)
 		g_cap.chrg_type = POWER_SUPPLY_CHARGER_TYPE_USB_DCP;
 #endif
@@ -1422,8 +1424,10 @@ static void handle_internal_usbphy_notifications(int mask)
 #if defined(CONFIG_A500CG_BATTERY_SMB347) || defined(CONFIG_SMB1357_CHARGER)
 			usb_cable_status = POWER_SUPPLY_CHARGER_TYPE_NONE;
 			cable_status_notifier_call_chain(usb_cable_status, &cap);
-#endif
+	}else if ((cap.chrg_type == POWER_SUPPLY_CHARGER_TYPE_USB_SDP)&&(Read_PROJ_ID()!=PROJ_ID_ZX550ML)) {
+#else
 	}else if (cap.chrg_type == POWER_SUPPLY_CHARGER_TYPE_USB_SDP) {
+#endif
 		schedule_delayed_work(&sdp_work, 1.5*HZ);
 	}else {
 		atomic_notifier_call_chain(&chc.otg->notifier, USB_EVENT_CHARGER, &cap);
@@ -1496,7 +1500,7 @@ int pmic_handle_low_supply(void)
 				dev_err(chc.dev, "Error reading SCHGRIRQ1-register 0x%2x\n", SCHGRIRQ1_ADDR);
 				return ret;
 			}
-			dev_info(chc.dev, "register SCHGRIRQ1_ADDR after 100ms * %d times = 0x%x\n", i+1, val);
+			dev_info(chc.dev, "register SCHGRIRQ1_ADDR after 1000ms * %d times = 0x%x\n", i+1, val);
 		}else {
 			break;
 		}

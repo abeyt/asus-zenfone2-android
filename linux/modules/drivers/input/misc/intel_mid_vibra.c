@@ -39,6 +39,8 @@
 #include <asm/intel_scu_pmic.h>
 #include "mid_vibra.h"
 
+extern bool is_incall;
+
 union sst_pwmctrl_reg {
 	struct {
 		u32 pwmtd:8;
@@ -150,12 +152,15 @@ static int vibra_pmic_pwm_configure(struct vibra_info *info, bool enable)
 {
 	int ret = 0;
 	pr_debug("%s: %s\n", __func__, enable ? "on" : "off");
-	if (enable) {	/*enable PWM block */
+	pr_debug("%s: is_incall is %s\n", __func__, is_incall? "true" : "false"); /* do not enable vibrator when audio android mode is incall(2) */
+	if (enable && !is_incall) {	/*enable PWM block */
 		ret = intel_scu_ipc_iowrite8(VIBRAGPO_REG, 0x16);
+		pr_debug("%s: enable PWM block\n", __func__);
 		if (ret)
 			printk("[VIB] write vibra_drv3102_enable duty value faild\n");
 	} else {	/*disable PWM block */
 		ret = intel_scu_ipc_iowrite8(VIBRAGPO_REG,0x04);
+		pr_debug("%s: disable PWM block\n", __func__);
 		if (ret)
 			printk("[VIB] write vibra_disable duty value faild\n");
 	}

@@ -117,8 +117,8 @@ static int lowmem_shrink(struct shrinker *s, struct shrink_control *sc)
 				}
 			}
 
-			for (i = 0; i < array_size; i++) {
-				minfree = lowmem_minfree[i];
+			for (i = 0; i < 1; i++) {
+				minfree = 6*1024;  // 24 MB, dalvik.vm.heapstartsize + dalvik.vm.heapmaxfree
 				if (dma32_free && dma32_free < minfree
 						&& dma32_file < minfree) {
 					min_score_adj = lowmem_adj[i];

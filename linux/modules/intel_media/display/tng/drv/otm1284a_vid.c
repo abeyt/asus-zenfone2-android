@@ -269,6 +269,7 @@ static u8 cm2_012[] = {0xE2,0x00, 0x16, 0x23, 0x31, 0x40, 0x4E, 0x50, 0x7C, 0x6F
 static u8 cm2_013[] = {0x00, 0xA4};
 static u8 cm2_014[] = {0xC1,0xF0};
 
+
 //-------------------- panel setting --------------------//
 static u8 cm3_001[] = {0x00, 0x80};
 static u8 cm3_002[] = {0xc0, 0x00, 0x64, 0x00, 0x0e, 0x12, 0x00, 0x64, 0x0e, 0x12};
@@ -292,8 +293,6 @@ static u8 cm3_019[] = {0x00, 0xc3};
 static u8 cm3_020[] = {0xf5, 0x85};
 static u8 cm3_021[] = {0x00, 0x87};
 static u8 cm3_022[] = {0xc4, 0x18};
-
-
 //-------------------- power setting --------------------//
 static u8 cm3_023[] = {0x00, 0xa0};
 static u8 cm3_024[] = {0xc4, 0x05, 0x10, 0x06, 0x02, 0x05, 0x15, 0x10, 0x05, 0x10, 0x07, 0x02, 0x05, 0x15, 0x10};
@@ -309,7 +308,6 @@ static u8 cm3_033[] = {0x00, 0x00};
 static u8 cm3_034[] = {0xd9, 0x56};
 static u8 cm3_035[] = {0x00, 0xb3};
 static u8 cm3_036[] = {0xc5, 0x84};
-
 //-------------------- power IC  --------------------//
 static u8 cm3_037[] = {0x00, 0x90};
 static u8 cm3_038[] = {0xf5, 0x02, 0x11, 0x02, 0x15};
@@ -331,7 +329,6 @@ static u8 cm3_053[] = {0x00, 0xd2};
 static u8 cm3_054[] = {0xf5, 0x06, 0x15};
 static u8 cm3_055[] = {0x00, 0xb4};
 static u8 cm3_056[] = {0xc5, 0xcc};
-
 //-------------------- panel timing state control --------------------//
 static u8 cm3_057[] = {0x00, 0x80};
 static u8 cm3_058[] = {0xcb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
@@ -349,8 +346,6 @@ static u8 cm3_069[] = {0x00, 0xe0};
 static u8 cm3_070[] = {0xcb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0x05, 0x05};
 static u8 cm3_071[] = {0x00, 0xf0};
 static u8 cm3_072[] = {0xcb, 0xff, 0xcf, 0x00, 0x03, 0xc0, 0xf0, 0xff, 0x0c, 0x30, 0x00, 0x0c};
-
-
 //-------------------- panel pad mapping control --------------------//
 static u8 cm3_073[] = {0x00, 0x80};
 static u8 cm3_074[] = {0xcc, 0x0c, 0x0a, 0x10, 0x0e, 0x02, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
@@ -364,8 +359,6 @@ static u8 cm3_081[] = {0x00, 0xc0};
 static u8 cm3_082[] = {0xcc, 0x00, 0x00, 0x00, 0x00, 0x05, 0x2e, 0x2d, 0x0e, 0x10, 0x0a, 0x0c, 0x04, 0x02, 0x00, 0x00};
 static u8 cm3_083[] = {0x00, 0xd0};
 static u8 cm3_084[] = {0xcc, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x06, 0x2E, 0x2D};
-
-
 //-------------------- PANEL TIMING SETTING --------------------//
 static u8 cm3_085[] = {0x00, 0x80};
 static u8 cm3_086[] = {0xce, 0x8b, 0x03, 0x18, 0x8a, 0x03, 0x18, 0x89, 0x03, 0x18, 0x88, 0x03, 0x18};
@@ -392,8 +385,6 @@ static u8 cm3_105[] = {0x00, 0xc0};
 static u8 cm3_106[] = {0xcf, 0x01, 0x01, 0x20, 0x20, 0x00, 0x00, 0x01, 0x81, 0x00, 0x03, 0x08};
 static u8 cm3_107[] = {0x00, 0xb5};
 static u8 cm3_108[] = {0xc5, 0x38, 0x00, 0x3f, 0x38, 0x00, 0x3f};
-
-
 //------------------Gamma------------------//
 static u8 cm3_109[] = {0x00, 0x00};
 static u8 cm3_110[] = {0xE1,0x02,0x1d,0x2c,0x3c,0x4d,0x5c,0x5e,0x89,0x7a,0x93,0x6e,0x59,0x69,0x41,0x40,0x31,0x21,0x11,0x06,0x02};
@@ -404,6 +395,21 @@ static u8 cm3_114[] = {0xc1, 0x02};
 
 static u8 cm3_115[] = {0xc5, 0x38, 0x20, 0xbf, 0x38, 0x20, 0xbf};
 static u8 cm3_116[] = {0xc5, 0x46, 0x42};
+
+
+static u8 cm4_001[] = {0x00, 0x80};
+static u8 cm4_002[] = {0xB0, 0x01};
+static u8 cm4_003[] = {0x00, 0x81};
+static u8 cm4_004[] = {0xB0, 0x11};
+static u8 cm4_005[] = {0x00, 0x82};
+static u8 cm4_006[] = {0xB0, 0x01};
+static u8 cm4_007[] = {0x00, 0x83};
+static u8 cm4_008[] = {0xB0, 0x41};
+static u8 cm4_009[] = {0x00, 0x84};
+static u8 cm4_010[] = {0xB0, 0x06};
+static u8 cm4_011[] = {0x00, 0x91};
+static u8 cm4_012[] = {0xB0, 0x9A};
+
 
 
 static u8 sleep_out[] = {0x11};
@@ -549,6 +555,16 @@ static struct mipi_dsi_cmd_orise ze550ml_TM_power_on_table[] = {
 	{0, 0, sizeof(cm3_113), cm3_113, sizeof(cm3_114), cm3_114},
 };
 
+static struct mipi_dsi_cmd_orise ze550ml_TLPX_power_on_table[] = {
+	{0, 0, sizeof(cm4_001), cm4_001, sizeof(cm4_002), cm4_002},
+	{0, 0, sizeof(cm4_003), cm4_003, sizeof(cm4_004), cm4_004},
+	{0, 0, sizeof(cm4_005), cm4_005, sizeof(cm4_006), cm4_006},
+	{0, 0, sizeof(cm4_007), cm4_007, sizeof(cm4_008), cm4_008},
+	{0, 0, sizeof(cm4_009), cm4_009, sizeof(cm4_010), cm4_010},
+	{0, 0, sizeof(cm4_011), cm4_011, sizeof(cm4_012), cm4_012},
+};
+
+
 
 static int send_mipi_cmd_gen(struct mdfld_dsi_pkg_sender * sender,
 				struct mipi_dsi_cmd *cmd) {
@@ -685,22 +701,22 @@ static int orise1284a_vid_drv_ic_reset_workaround(struct mdfld_dsi_config *dsi_c
 
 	sender->status = MDFLD_DSI_PKG_SENDER_FREE;
 
-	mdfld_dsi_send_mcs_short_lp(sender, 0x11, 0, 0, MDFLD_DSI_SEND_PACKAGE);
+	mdfld_dsi_send_mcs_short_hs(sender, 0x11, 0, 0, MDFLD_DSI_SEND_PACKAGE);
 	mdelay(5);
-	mdfld_dsi_send_mcs_short_lp(sender, 0x29, 0, 0, MDFLD_DSI_SEND_PACKAGE);
+	mdfld_dsi_send_mcs_short_hs(sender, 0x29, 0, 0, MDFLD_DSI_SEND_PACKAGE);
 
-	mdfld_dsi_send_mcs_short_lp(sender, 0x00, 0x80, 1, MDFLD_DSI_SEND_PACKAGE);
-	mdfld_dsi_send_mcs_short_lp(sender, 0xFF, 0x12, 1, MDFLD_DSI_SEND_PACKAGE);
-	mdfld_dsi_send_mcs_short_lp(sender, 0xFF, 0x84, 1, MDFLD_DSI_SEND_PACKAGE);
+	mdfld_dsi_send_mcs_short_hs(sender, 0x00, 0x80, 1, MDFLD_DSI_SEND_PACKAGE);
+	mdfld_dsi_send_mcs_short_hs(sender, 0xFF, 0x12, 1, MDFLD_DSI_SEND_PACKAGE);
+	mdfld_dsi_send_mcs_short_hs(sender, 0xFF, 0x84, 1, MDFLD_DSI_SEND_PACKAGE);
 
-	mdfld_dsi_send_mcs_short_lp(sender, 0x00, 0x90, 1, MDFLD_DSI_SEND_PACKAGE);
-	mdfld_dsi_send_mcs_short_lp(sender, 0xB6, 0xB6, 1, MDFLD_DSI_SEND_PACKAGE);
-	mdfld_dsi_send_mcs_short_lp(sender, 0x00, 0x92, 1, MDFLD_DSI_SEND_PACKAGE);
-	mdfld_dsi_send_mcs_short_lp(sender, 0xB3, 0x06, 1, MDFLD_DSI_SEND_PACKAGE);
+	mdfld_dsi_send_mcs_short_hs(sender, 0x00, 0x90, 1, MDFLD_DSI_SEND_PACKAGE);
+	mdfld_dsi_send_mcs_short_hs(sender, 0xB6, 0xB6, 1, MDFLD_DSI_SEND_PACKAGE);
+	mdfld_dsi_send_mcs_short_hs(sender, 0x00, 0x92, 1, MDFLD_DSI_SEND_PACKAGE);
+	mdfld_dsi_send_mcs_short_hs(sender, 0xB3, 0x06, 1, MDFLD_DSI_SEND_PACKAGE);
 
-	mdfld_dsi_send_mcs_short_lp(sender, 0x00, 0x80, 1, MDFLD_DSI_SEND_PACKAGE);
-	mdfld_dsi_send_mcs_short_lp(sender, 0xFF, 0x00, 1, MDFLD_DSI_SEND_PACKAGE);
-	mdfld_dsi_send_mcs_short_lp(sender, 0xFF, 0x00, 1, MDFLD_DSI_SEND_PACKAGE);
+	mdfld_dsi_send_mcs_short_hs(sender, 0x00, 0x80, 1, MDFLD_DSI_SEND_PACKAGE);
+	mdfld_dsi_send_mcs_short_hs(sender, 0xFF, 0x00, 1, MDFLD_DSI_SEND_PACKAGE);
+	mdfld_dsi_send_mcs_short_hs(sender, 0xFF, 0x00, 1, MDFLD_DSI_SEND_PACKAGE);
 
 	if (sender->status == MDFLD_DSI_CONTROL_ABNORMAL) {
 		printk("[DISP] %s MDFLD_DSI_CONTROL_ABNORMAL !!\n", __func__);
@@ -740,6 +756,10 @@ static int otm1284a_vid_drv_ic_init(struct mdfld_dsi_config *dsi_config){
 	if(lcd_id == ZE550ML_TM_MP) {
 		mdfld_dsi_send_mcs_short_lp(sender, 0x00, 0x00, 1, MDFLD_DSI_SEND_PACKAGE);
 		mdfld_dsi_send_gen_long_lp(sender, cm_FF_1, sizeof(cm_FF_1), MDFLD_DSI_SEND_PACKAGE);
+		mdfld_dsi_send_mcs_short_lp(sender, 0x00, 0x80, 1, MDFLD_DSI_SEND_PACKAGE);
+		mdfld_dsi_send_gen_long_lp(sender, cm_FF_2, sizeof(cm_FF_2), MDFLD_DSI_SEND_PACKAGE);
+		for(i = 0; i < otm1284a_power_on_table_size; i++)
+			send_mipi_cmd_orise(sender, &otm1284a_power_on_table[i]);
 	} else if (lcd_id == ZE550ML_TM) {
 		mdfld_dsi_send_mcs_short_lp(sender, 0x00, 0x00, 1, MDFLD_DSI_SEND_PACKAGE);
 		mdfld_dsi_send_gen_long_lp(sender, cm_FF_1, sizeof(cm_FF_1), MDFLD_DSI_SEND_PACKAGE);
@@ -756,6 +776,8 @@ static int otm1284a_vid_drv_ic_init(struct mdfld_dsi_config *dsi_config){
 		mdfld_dsi_send_gen_long_lp(sender, cm_FF_2, sizeof(cm_FF_2), MDFLD_DSI_SEND_PACKAGE);
 		mdfld_dsi_send_mcs_short_lp(sender, 0x00, 0x91, 1, MDFLD_DSI_SEND_PACKAGE);
 		mdfld_dsi_send_gen_long_lp(sender, cm3_116, sizeof(cm3_116), MDFLD_DSI_SEND_PACKAGE);
+		for(i = 0; i < otm1284a_power_on_table_size; i++)
+			send_mipi_cmd_orise(sender, &otm1284a_power_on_table[i]);
 	} else if (lcd_id != ZE500ML_TM) {
 		mdfld_dsi_send_mcs_short_lp(sender, 0x00, 0x00, 1, MDFLD_DSI_SEND_PACKAGE);
 		mdfld_dsi_send_gen_long_lp(sender, cm_FF_1, sizeof(cm_FF_1), MDFLD_DSI_SEND_PACKAGE);
@@ -801,7 +823,7 @@ otm1284a_vid_dsi_controller_init(struct mdfld_dsi_config *dsi_config)
 	hw_ctx = &dsi_config->dsi_hw_context;
 	hw_ctx->cck_div = 1;
 	hw_ctx->pll_bypass_mode = 0;
-	hw_ctx->mipi_control = 0x18;
+	hw_ctx->mipi_control = 0x38;
 	hw_ctx->intr_en = 0xFFFFFFFF;
 	hw_ctx->hs_tx_timeout = 0xFFFFFF;
 	hw_ctx->lp_rx_timeout = 0xFFFFFF;
@@ -826,15 +848,15 @@ otm1284a_vid_dsi_controller_init(struct mdfld_dsi_config *dsi_config)
 	}
 #else
 	if (lcd_id == ZE550ML_TM || lcd_id == ZE550ML_TM_SR || lcd_id == ZE550ML_TM_MP){
-		hw_ctx->high_low_switch_count = 0x1F;
-		hw_ctx->clk_lane_switch_time_cnt = 0x1e000d;
-		hw_ctx->lp_byteclk = 0x3;
-		hw_ctx->dphy_param = 0x330f350b;
+		hw_ctx->high_low_switch_count = 0x27;
+		hw_ctx->clk_lane_switch_time_cnt = 0x280011;
+		hw_ctx->lp_byteclk = 0x6;
+		hw_ctx->dphy_param = 0x310f330d;
 	} else {
-		hw_ctx->high_low_switch_count = 0x15;
-		hw_ctx->clk_lane_switch_time_cnt = 0x1a000c;
-		hw_ctx->lp_byteclk = 0x3;
-		hw_ctx->dphy_param = 0x150b2a0d;
+		hw_ctx->high_low_switch_count = 0x22;
+		hw_ctx->clk_lane_switch_time_cnt = 0x23000f;
+		hw_ctx->lp_byteclk = 0x5;
+		hw_ctx->dphy_param = 0x2a0d2c0b;
 	}
 #endif
 	hw_ctx->eot_disable = 0x3;
@@ -860,6 +882,10 @@ otm1284a_vid_dsi_controller_init(struct mdfld_dsi_config *dsi_config)
 		printk("[DISP] Load TM SR panel initial settings.\n");
 		otm1284a_power_on_table = ze550ml_TM_power_on_table;
 		otm1284a_power_on_table_size = ARRAY_SIZE(ze550ml_TM_power_on_table);
+	} else if (lcd_id == ZE550ML_TM_MP || lcd_id == ZE550ML_CPT) {
+		printk("[DISP] Load ZE550ML MP panel initial settings.\n");
+		otm1284a_power_on_table = ze550ml_TLPX_power_on_table;
+		otm1284a_power_on_table_size = ARRAY_SIZE(ze550ml_TLPX_power_on_table);
 	}
 }
 
@@ -1225,12 +1251,20 @@ void otm1284a_vid_init(struct drm_device *dev, struct panel_funcs *p_funcs)
 			lcd_id = ZE500ML_TM;
 	} else if (Read_PROJ_ID() == PROJ_ID_ZE550ML) {
 		if (Read_LCD_ID() == ZE550ML_LCD_ID_OTM_TM) {
-			if (Read_HW_ID() == HW_ID_SR1 || Read_HW_ID() == HW_ID_SR2)
-				lcd_id = ZE550ML_TM_SR;
-			else if (Read_HW_ID() == HW_ID_pre_PR || Read_HW_ID() == HW_ID_PR || Read_HW_ID() == HW_ID_MP)
-				lcd_id = ZE550ML_TM_MP;
-			else
-				lcd_id = ZE550ML_TM;
+			switch(Read_HW_ID()) {
+				case HW_ID_SR1:
+				case HW_ID_SR2:
+					lcd_id = ZE550ML_TM_SR;
+					break;
+				case HW_ID_ER:
+				case HW_ID_ER1_1:
+				case HW_ID_ER1_2:
+					lcd_id = ZE550ML_TM;
+					break;
+				default:
+					lcd_id = ZE550ML_TM_MP;
+					break;
+			}
 		} else {
 			lcd_id = ZE550ML_CPT;
 		}

@@ -67,7 +67,7 @@ struct delayed_work spk_unmute_work;
 static int spk_unmute_delay_time;
 
 static struct rt5647_init_reg init_list[] = {
-	{ RT5647_ADDA_CLK1	, 0x0000 },
+	{ RT5647_ADDA_CLK1	, 0x1110 },
 	{ RT5647_IL_CMD         , 0x0007 },
 	{ RT5647_IL_CMD3        , 0x0000 },
 	{ RT5647_IL_CMD2	, 0x0010 }, /* set Inline Command Window */

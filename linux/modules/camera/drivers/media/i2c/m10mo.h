@@ -40,7 +40,7 @@
 #define M10MO_I2C_RETRY			5
 #define M10MO_MIPI_FREQ_0			(963000000/2)
 #define M10MO_MIPI_FREQ_1			(980700000/2)
-#define M10MO_INIT_TIMEOUT		5000
+#define M10MO_INIT_TIMEOUT		30000
 #define M10MO_BOOT_TIMEOUT		5000
 #define POLL_NUM			20
 
@@ -155,6 +155,10 @@ struct m10mo_monitor_params {
 	u8 exe_mode;
 	unsigned int af_touch_posx;
 	unsigned int af_touch_posy;
+	unsigned int af_touch_width;
+	unsigned int af_touch_height;
+	unsigned int ae_touch_posx;
+	unsigned int ae_touch_posy;
 	u8 flash_mode;
 	u8 torch;
 };
@@ -190,9 +194,10 @@ struct m10mo_device {
 	int res_type;
 	int power;
 	u8 fps;
-	u8 requested_mode;
-	u8 mode;
-	u8 capture_mode;
+	u8 requested_cmd;
+	u8 cmd;
+	u8 m10mo_mode;
+	u32 capture_mode;
 	short iso_mode;
 	short iso_sensitivity;
 	u8 colorfx_cr;
@@ -242,7 +247,7 @@ int m10mo_readb(struct v4l2_subdev *sd, u8 category, u8 reg, u32 *val);
 int m10mo_readw(struct v4l2_subdev *sd, u8 category, u8 reg, u32 *val);
 int m10mo_readl(struct v4l2_subdev *sd, u8 category, u8 reg, u32 *val);
 int m10mo_setup_flash_controller(struct v4l2_subdev *sd);
-int m10mo_request_mode_change(struct v4l2_subdev *sd, u8 requested_mode);
+int m10mo_request_cmd_effect(struct v4l2_subdev *sd, u8 requested_mode, void* data);
 int m10mo_wait_mode_change(struct v4l2_subdev *sd, u8 mode, u32 timeout);
 int __m10mo_param_mode_set(struct v4l2_subdev *sd);
 int __m10mo_update_stream_info(struct v4l2_subdev *sd, struct v4l2_mbus_framefmt *fmt);
@@ -251,7 +256,7 @@ int __m10mo_set_mbus_fmt(struct v4l2_subdev *sd, struct v4l2_mbus_framefmt *fmt)
 int m10mo_test_pattern_start(struct v4l2_subdev *sd);
 
 int get_resolution_index(const struct m10mo_resolution *res,
-			 int entries, int w, int h);
+			 int entries, u32 w, u32 h);
 int m10mo_set_zsl_raw_capture(struct v4l2_subdev *sd);
 
 
@@ -293,6 +298,7 @@ extern const struct m10mo_fw_ops fw_type2_ops;
 #define CATEGORY_PARAM		0x01	/* Monitor & Still Parameter A */
 #define CATEGORY_MONITOR	0x02  /* Monitor & Still Parameter B */
 #define CATEGORY_AE		0x03
+#define CATEGORY_ASUS       0x04
 #define CATEGORY_WB		0x06
 #define CATEGORY_EXIF		0x07  /* Exif Information */
 #define CATEGORY_LENS		0x0a	/* AF Control */
@@ -301,6 +307,32 @@ extern const struct m10mo_fw_ops fw_type2_ops;
 #define CATEGORY_LOGLEDFLASH	0x0d	/*Log Led Flash Category */
 #define CATEGORY_TEST		0x0d	/* Test category for FW_TYPE_2 */
 #define CATEGORY_FLASHROM	0x0f	/* FlashROM-Writer Mode only */
+
+/* ASUS DIT defined parameters */
+#define ASUS_SATURATION             0x00
+#define ASUS_CONTRAST               0x01
+#define ASUS_ISO                    0x10
+#define ASUS_EV                     0x11
+#define ASUS_SHUTTER_SPEED          0x12
+#define ASUS_FLICKER                0x13
+#define ASUS_AE_SCENE_MODE          0x14
+#define ASUS_FLASH                  0x15
+#define ASUS_METERING_MODE          0x16
+#define ASUS_TOUCH_POSITION_X       0x17
+#define ASUS_TOUCH_POSITION_Y       0x19
+#define ASUS_TOUCH_ROI_LEFT_UPPER_X 0x30
+#define ASUS_TOUCH_ROI_LEFT_UPPER_Y 0x32
+#define ASUS_TOUCH_WIDTH            0x34
+#define ASUS_TOUCH_HEIGHT           0x36
+#define ASUS_PHONE_DIRECTION        0x38
+#define ASUS_ZOOM_POSITION          0x39
+#define ASUS_FOCUS_STEP             0x3A
+#define ASUS_FOCUS_MODE             0x3B
+#define ASUS_G_SENSOR_X             0x3C
+#define ASUS_G_SENSOR_Y             0x3E
+#define ASUS_G_SENSOR_Z             0x40
+#define ASUS_WB_MANUAL              0x50
+#define ASUS_COLOR_TEMPERATURE      0x51
 
 /* Category 0_SYSTEM mode */
 #define SYSTEM_CUSTOMER_CODE	0x00
@@ -329,6 +361,7 @@ extern const struct m10mo_fw_ops fw_type2_ops;
 /* Interrupt factor (pending) register */
 #define SYSTEM_INT_FACTOR	0x1c
 #define REG_INT_STATUS_MODE	(1 << 0)
+#define REG_INT_STATUS_FOCUS	(1 << 1)
 #define REG_INT_STATUS_ZOOM	(1 << 2)
 #define REG_INT_STATUS_CAPTURE	(1 << 3)
 #define REG_INT_STATUS_FRAMESYNC (1 << 4)
@@ -337,6 +370,7 @@ extern const struct m10mo_fw_ops fw_type2_ops;
 
 /* category 1_PARAMETER mode */
 #define PARAM_MON_SIZE			0x01
+#define PARAM_CAP_SIZE			0x01
 #define PARAM_MON_FPS			0x02
 #define REG_FPS_30			0x02
 #define PARAM_OUTPUT_IF_SEL		0x00
@@ -547,6 +581,11 @@ extern const struct m10mo_fw_ops fw_type2_ops;
 #define CAPC_SEL_FRAME_MAIN	0x06
 #define CAPC_TRANSFER_START	0x09
 #define REG_CAP_START_MAIN	0x01
+#define REQUEST_MULTI_CAP_FRAMES 0x0a
+#define HDR_CAP                  0x02
+#define LLS_CAP                  0x04
+#define RAW_CAP                  0x0B
+#define STOP_RAW_CAP             0x02
 
 /* Category D LED Flash Control */
 #define FLASH_MODE              0xB6
@@ -650,30 +689,42 @@ extern const struct m10mo_fw_ops fw_type2_ops;
 /* Starts internal ARM core, 1st command to be sent to ISP */
 #define FLASH_CAM_START		REG_CAM_START
 
-/* Internal modes of M10MO */
-enum M10MO_MODES {
-	M10MO_NO_MODE_REQUEST,
+/* Request commands of M10MO */
+enum M10MO_COMMANDS {
+//=========== M10MO PARAMETER MODE ============//
+	M10MO_CAMERA_START,
+	M10MO_PARAMETER_MODE_REQUEST_CMD,
+	M10MO_HOME_SEARCHING_MODE,
+	M10MO_ZOOM_LENS_TO_PR,
+    M10MO_FOCUS_LENS_TO_PR,
 	M10MO_POWERED_OFF,
 	M10MO_POWERING_ON,
-	M10MO_FLASH_WRITE_MODE,
-	M10MO_PARAM_SETTING_MODE,
-	M10MO_PARAMETER_MODE,
+	M10MO_NO_CMD_REQUEST,
+//=========== M10MO MONITOR MODE ============//
 	M10MO_MONITOR_MODE,
-	M10MO_MONITOR_MODE_ZSL,
+	M10MO_MONITOR_MODE_ZSL_REQUEST_CMD,
 	M10MO_MONITOR_MODE_PANORAMA,
 	M10MO_SINGLE_CAPTURE_MODE,
 	M10MO_BURST_CAPTURE_MODE,
-	M10MO_MONITOR_MODE_HIGH_SPEED
+	M10MO_MONITOR_MODE_HIGH_SPEED,
+    M10MO_START_OPTICAL_ZOOM,
+    M10MO_START_AF,
+    M10MO_START_DIGITAL_ZOOM
 };
-
-/* Internal modes of M10MO */
-enum M10MO_CAPTURE_MODES {
+enum M10MO_MODE {
+    M10MO_MONITOR_MODE_ZSL,
+	M10MO_PARAMETER_MODE
+};
+/* Camera Application Modes */
+enum APPLICATION_CAPTURE_MODES {
 	M10MO_CAPTURE_MODE_ZSL_NORMAL = 0,
-	M10MO_CAPTURE_MODE_ZSL_HDR,
-	M10MO_CAPTURE_MODE_ZSL_LLS,
-	M10MO_CAPTURE_MODE_ZSL_BURST,
-	M10MO_CAPTURE_MODE_ZSL_RAW
+	APP_HDR_CAP_MODE_ZSL = 0x1,
+	APP_LLS_CAP_MODE_ZSL = 0x2,
+	M10MO_CAPTURE_MODE_ZSL_BURST = 0x4,
+	M10MO_CAPTURE_MODE_ZSL_RAW = 0xB
 };
+#define IS_M10MO_MONITOR_MODE(command)     (command < M10MO_NO_CMD_REQUEST)
+#define IS_M10MO_PARAMETER_MODE(command)     (command > M10MO_NO_CMD_REQUEST)
 
 #define M10MO_MODE_PREVIEW_INDEX	0
 #define M10MO_MODE_CAPTURE_INDEX	1
@@ -687,8 +738,13 @@ enum M10MO_CAPTURE_MODES {
 /* FIXME It should be in tables */
 #define MON_SIZE_FHD_60FPS		0x2b
 
-extern const struct m10mo_resolution *resolutions[][3];
-extern const ssize_t resolutions_sizes[][3];
+//================= WA for m10mo capture flag =================//
+#define M10MO_NOT_CAPTURE_0                       (0)
+#define M10MO_CAP_BEFORE_1ST_STREAMOFF_1          (1)
+#define M10MO_CAP_BETWEEN_1ST_AND_2ND_STREAMOFF_2 (2)
+
+extern const struct m10mo_resolution *resolutions[];
+extern const ssize_t resolutions_sizes[];
 
 struct M10MO_AF_Parameters {
 	u8 af_mode;

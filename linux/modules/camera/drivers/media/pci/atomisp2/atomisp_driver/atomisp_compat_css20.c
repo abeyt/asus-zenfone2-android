@@ -1107,7 +1107,10 @@ int atomisp_css_irq_enable(struct atomisp_device *isp,
 			    enum atomisp_css_irq_info info, bool enable)
 {
 	if (ia_css_irq_enable(info, enable) != IA_CSS_SUCCESS) {
-		dev_warn(isp->dev, "%s:Invalid irq info.\n", __func__);
+		if(info == IA_CSS_IRQ_INFO_CSS_RECEIVER_SOF)
+			dev_warn(isp->dev, "%s [atomisp] CSS RECEIVER SOF.\n", __func__);
+		else
+			dev_warn(isp->dev, "%s:Invalid irq info.\n", __func__);
 		return -EINVAL;
 	}
 
@@ -1375,8 +1378,8 @@ int atomisp_css_start(struct atomisp_sub_device *asd,
                 }
                 for(count = 0; count < 1000 && !getOpenIntelISP(); count++){
                     if(!(count%10))
-                        printk("davidwangs count = %d\n", count);
-                    mdelay(1);
+                       printk("@%s wait for m10mo irq %dms\n", __func__, count);
+                    msleep(1);
                 }
             }
 #endif

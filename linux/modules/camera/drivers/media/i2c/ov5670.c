@@ -1385,7 +1385,9 @@ static int ov5670_s_stream(struct v4l2_subdev *sd, int enable)
 	ret = ov5670_write_reg(client, OV5670_8BIT, OV5670_SW_STREAM,
 				enable ? OV5670_START_STREAMING :
 				OV5670_STOP_STREAMING);
-
+	if(enable){
+		msleep(20);
+	}
 	mutex_unlock(&dev->input_lock);
 
 	return ret;

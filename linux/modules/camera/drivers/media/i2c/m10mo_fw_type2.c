@@ -57,7 +57,7 @@ static int m10mo_set_monitor_mode(struct v4l2_subdev *sd)
 	int mode = M10MO_GET_RESOLUTION_MODE(dev->fw_type);
 
 	dev_info(&client->dev, "%s mode: %d Width: %d, height: %d, cmd: 0x%x\n",
-		__func__, dev->mode, dev->curr_res_table[dev->fmt_idx].width,
+		__func__, dev->cmd, dev->curr_res_table[dev->fmt_idx].width,
 		dev->curr_res_table[dev->fmt_idx].height,
 		dev->curr_res_table[dev->fmt_idx].command);
 
@@ -67,7 +67,7 @@ static int m10mo_set_monitor_mode(struct v4l2_subdev *sd)
 		goto out;
 
 	/* If mode is monitor mode and size same, do not configure again*/
-	if (dev->mode == M10MO_MONITOR_MODE &&
+	if (dev->cmd == M10MO_MONITOR_MODE &&
 		val == dev->curr_res_table[dev->fmt_idx].command)
 		return 0;
 
@@ -109,7 +109,7 @@ static int m10mo_set_monitor_mode(struct v4l2_subdev *sd)
 	if (ret)
 		goto out;
 	/* Go to Monitor mode and output YUV Data */
-	ret = m10mo_request_mode_change(sd, M10MO_MONITOR_MODE);
+	ret = m10mo_request_cmd_effect(sd, M10MO_MONITOR_MODE, NULL);
 	if (ret)
 		goto out;
 
@@ -124,20 +124,20 @@ static int m10mo_set_burst_capture(struct v4l2_subdev *sd)
 	struct m10mo_device *dev = to_m10mo_sensor(sd);
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
 	const struct m10mo_resolution *capture_res;
-	int mode = M10MO_GET_RESOLUTION_MODE(dev->fw_type);
+//	int mode = M10MO_GET_RESOLUTION_MODE(dev->fw_type);
 	int idx;
 	int ret;
 
 	dev_info(&client->dev, "%s mode: %d width: %d, height: %d, cmd: 0x%x\n",
-		__func__, dev->mode, dev->curr_res_table[dev->fmt_idx].width,
+		__func__, dev->cmd, dev->curr_res_table[dev->fmt_idx].width,
 		dev->curr_res_table[dev->fmt_idx].height,
 		dev->curr_res_table[dev->fmt_idx].command);
 
 	/* Exit from normal monitor mode. */
-	ret = m10mo_request_mode_change(sd, M10MO_PARAMETER_MODE);
+	ret = m10mo_request_cmd_effect(sd, M10MO_PARAMETER_MODE_REQUEST_CMD, NULL);
 	if (ret)
 		return ret;
-	ret = m10mo_wait_mode_change(sd, M10MO_PARAMETER_MODE, M10MO_INIT_TIMEOUT);
+	ret = m10mo_wait_mode_change(sd, M10MO_PARAMETER_MODE_REQUEST_CMD, M10MO_INIT_TIMEOUT);
 	if (ret)
 		return ret;
 
@@ -145,11 +145,10 @@ static int m10mo_set_burst_capture(struct v4l2_subdev *sd)
 	 * Map burst capture size to monitor size. Burst capture uses
 	 * monitor parameters.
 	 */
-	capture_res = &resolutions[mode][M10MO_MODE_CAPTURE_INDEX]
-		[dev->capture_res_idx];
+	capture_res = resolutions[M10MO_MODE_CAPTURE_INDEX];
 	idx = get_resolution_index(
-		resolutions[mode][M10MO_MODE_PREVIEW_INDEX],
-		resolutions_sizes[mode][M10MO_MODE_PREVIEW_INDEX],
+		resolutions[M10MO_MODE_CAPTURE_INDEX],
+		resolutions_sizes[M10MO_MODE_CAPTURE_INDEX],
 		capture_res->width, capture_res->height);
 	if (idx == -1) {
 		dev_err(&client->dev, "Unsupported burst capture size %dx%d\n",
@@ -157,13 +156,13 @@ static int m10mo_set_burst_capture(struct v4l2_subdev *sd)
 		return -EINVAL;
 	}
 	ret = m10mo_writeb(sd, CATEGORY_PARAM, PARAM_MON_SIZE,
-		resolutions[mode][M10MO_MODE_PREVIEW_INDEX][idx]
+		resolutions[M10MO_MODE_PREVIEW_INDEX][idx]
 		.command);
 	if (ret)
 		return ret;
 
 	/* Start burst capture. */
-	ret = m10mo_request_mode_change(sd, M10MO_BURST_CAPTURE_MODE);
+	ret = m10mo_request_cmd_effect(sd, M10MO_BURST_CAPTURE_MODE, NULL);
 
 	return ret;
 }
@@ -172,17 +171,17 @@ static int m10mo_set_still_capture_fw_type2(struct v4l2_subdev *sd)
 {
 	struct m10mo_device *dev = to_m10mo_sensor(sd);
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
-	int mode = M10MO_GET_RESOLUTION_MODE(dev->fw_type);
+//	int mode = M10MO_GET_RESOLUTION_MODE(dev->fw_type);
 	int ret;
 
 	dev_info(&client->dev, "%s mode: %d width: %d, height: %d, cmd: 0x%x\n",
-		__func__, dev->mode, dev->curr_res_table[dev->fmt_idx].width,
+		__func__, dev->cmd, dev->curr_res_table[dev->fmt_idx].width,
 		dev->curr_res_table[dev->fmt_idx].height,
 		dev->curr_res_table[dev->fmt_idx].command);
 
 	/* Setting before switching to capture mode */
 	ret = m10mo_writeb(sd, CATEGORY_CAPTURE_PARAM, CAPP_MAIN_IMAGE_SIZE,
-			  resolutions[mode][M10MO_MODE_CAPTURE_INDEX][dev->capture_res_idx].command);
+			  resolutions[M10MO_MODE_CAPTURE_INDEX][dev->capture_res_idx].command);
 	if (ret)
 		goto out;
 	ret = m10mo_writeb(sd, CATEGORY_CAPTURE_CTRL, CAPC_MODE, 0);/* Single Capture*/
@@ -194,7 +193,7 @@ static int m10mo_set_still_capture_fw_type2(struct v4l2_subdev *sd)
 		goto out;
 
 	/* Set capture mode */
-	ret = m10mo_request_mode_change(sd, M10MO_SINGLE_CAPTURE_MODE);
+	ret = m10mo_request_cmd_effect(sd, M10MO_SINGLE_CAPTURE_MODE, NULL);
 
 out:
 	return ret;
@@ -226,7 +225,7 @@ int m10mo_set_run_mode_fw_type2(struct v4l2_subdev *sd)
 		break;
 	default:
 		/* Start still capture if M10MO is already in monitor mode. */
-		if (dev->mode == M10MO_MONITOR_MODE) {
+		if (dev->cmd == M10MO_MONITOR_MODE) {
 			if (dev->capture_mode ==
 			    M10MO_CAPTURE_MODE_ZSL_BURST)
 				ret = m10mo_set_burst_capture(sd);
@@ -243,7 +242,7 @@ static int __m10mo_monitor_mode_set(struct v4l2_subdev *sd)
 {
 	int ret;
 
-	ret = m10mo_request_mode_change(sd, M10MO_MONITOR_MODE);
+	ret = m10mo_request_cmd_effect(sd, M10MO_MONITOR_MODE, NULL);
 	if (ret)
 		return ret;
 
@@ -259,7 +258,7 @@ int m10mo_streamoff_fw_type2(struct v4l2_subdev *sd)
 	struct m10mo_device *dev = to_m10mo_sensor(sd);
 	int ret = 0;
 
-	if (dev->mode == M10MO_SINGLE_CAPTURE_MODE) {
+	if (dev->cmd == M10MO_SINGLE_CAPTURE_MODE) {
 		/* Exit capture mode and back to monitor mode */
 		ret = m10mo_writeb(sd, CATEGORY_SYSTEM, SYSTEM_INT_ENABLE, 0x01);
 		if (ret)
@@ -267,7 +266,7 @@ int m10mo_streamoff_fw_type2(struct v4l2_subdev *sd)
 		ret = __m10mo_monitor_mode_set(sd);
 		if (ret)
 			return ret;
-	} else if (dev->mode == M10MO_BURST_CAPTURE_MODE) {
+	} else if (dev->cmd == M10MO_BURST_CAPTURE_MODE) {
 		/* Exit burst capture mode. */
 		ret = __m10mo_param_mode_set(sd);
 		if (ret)
@@ -312,7 +311,7 @@ int __m10mo_try_mbus_fmt_fw_type2(struct v4l2_subdev *sd,
 			(struct atomisp_input_stream_info *)fmt->reserved;
 	const struct m10mo_resolution *res;
 	int entries, idx;
-	int mode = M10MO_GET_RESOLUTION_MODE(dev->fw_type);
+//	int mode = M10MO_GET_RESOLUTION_MODE(dev->fw_type);
 
 	/* Set mbus format to 0x8001(YUV420) */
 	fmt->code = 0x8001;
@@ -322,9 +321,9 @@ int __m10mo_try_mbus_fmt_fw_type2(struct v4l2_subdev *sd,
 			(dev->run_mode == CI_MODE_PREVIEW ||
 			 dev->run_mode == CI_MODE_VIDEO ||
 			 dev->run_mode == CI_MODE_CONTINUOUS)) {
-		res = resolutions[mode][M10MO_MODE_CAPTURE_INDEX];
+		res = resolutions[M10MO_MODE_CAPTURE_INDEX];
 		entries =
-		     resolutions_sizes[mode][M10MO_MODE_CAPTURE_INDEX];
+		     resolutions_sizes[M10MO_MODE_CAPTURE_INDEX];
 	} else {
 		res = dev->curr_res_table;
 		entries = dev->entries_curr_table;

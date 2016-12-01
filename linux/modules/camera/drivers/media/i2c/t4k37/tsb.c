@@ -47,6 +47,7 @@
 #if (defined(CONFIG_KXTJ9_SENSOR) && CONFIG_KXTJ9_SENSOR)
 #include <linux/kxtj9.h>
 #endif
+#include <linux/HWVersion.h>
 extern u8 tsb_otp_data[24];
 static int binning_sum;
 static struct tsb_vcm *inner_vcm;
@@ -2529,6 +2530,10 @@ static int tsb_probe(struct i2c_client *client,
 	struct proc_dir_entry* proc_entry_vcm;
 	void* dummy = NULL;
 
+    if(Read_PROJ_ID() == PROJ_ID_ZX550ML){
+        printk(KERN_INFO "@%s, It is ZX project, but ZE expected for t4k37, break! \n", __func__);
+        return -1;
+    }
 	printk("%s, start\n", __func__);
 
 	/* allocate sensor device & init sub device */

@@ -244,7 +244,7 @@ const struct cntry_locales_custom translate_custom_table[] = {
 	{"TR", "TR", 7},  /* TURKEY : ch 1-13, ch 36-48, ch 52-140 radar passive */
 	{"TW", "CA", 2},  /* NCC 2015 open Band 1 temp set to CANADA : ch 1-11, ch 36-48, ch 56-140 radar passive, ch 144-165 active */
 	{"UA", "UA", 8},  /* UKRAINE : ch 1-13, ch 36-48, ch 52-132 radar passive, ch 149-165 */
-	{"US", "XV", 17},  /* UNITED STATES : ch 1-11, ch 36-48, ch 149-165 */
+	{"US", "US", 151},  /* UNITED STATES : ch 1-11, ch 36-48, ch 149-165 */
 	{"VN", "VN", 4},  /* VIET NAM : ch 1-13, ch 36-48, ch 52-140 radar passive, ch 144-165 */
 #endif
 #if defined(BCM4335_CHIP)

@@ -223,8 +223,11 @@ static int mdm_ctrl_cold_reset(struct mdm_info *mdm)
 	pr_warn(DRVNAME ": Cold reset requested");
 
 	mdm_ctrl_power_off(mdm);
-	usleep_range(1000000,1000000);
-	mdm_ctrl_cold_boot(mdm);
+        if (mdm->pdata->mdm_ver == MODEM_2230)
+	  usleep_range(1000000,1000000);
+        else
+          usleep_range(30000,30000);
+        mdm_ctrl_cold_boot(mdm);
 
 	return 0;
 }
