@@ -22,6 +22,7 @@
  * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
  */
 
+
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
 #include <linux/module.h>
@@ -153,26 +154,46 @@ static int vibra_pmic_pwm_configure(struct vibra_info *info, bool enable)
 	int ret = 0;
 	pr_debug("%s: %s\n", __func__, enable ? "on" : "off");
 	pr_debug("%s: is_incall is %s\n", __func__, is_incall? "true" : "false"); /* do not enable vibrator when audio android mode is incall(2) */
-	if (enable) {
-		if (is_incall) {
+	if (enable) {	/*enable PWM block */
+#ifdef CONFIG_ZS550ML
+		lnw_gpio_set_alt(info->gpio_pwm, info->alt_fn);
+		ret = gpio_direction_output(info->gpio_en, 1);
+		if (ret)
+			printk("[VIB] write vibra_en on value failed, ret = %d\n", ret);
+		ret = gpio_direction_output(info->gpio_pwm, 1);
+		if (ret)
+			printk("[VIB] write vibra_pwm on value failed, ret = %d\n", ret);
+#else
+		if(is_incall) {
 			ret = intel_scu_ipc_iowrite8(VIBRAPWM_REG, 0x41);
 			pr_debug("%s: enable PWM block when incall\n", __func__);
 			if (ret)
-				printk("[VIB] write vibra_drv3102_enable duty value faild\n");
+				printk("[VIB] write vibra_drv3102_enable PWM duty value faild, ret = %d\n", ret);
 		} else {
 			ret = intel_scu_ipc_iowrite8(VIBRAGPO_REG, 0x16);
 			pr_debug("%s: enable GPO block\n", __func__);
 			if (ret)
-				printk("[VIB] write vibra_drv3102_enable duty value faild\n");
+				printk("[VIB] write vibra_drv3102_enable GPO value failed, ret = %d\n", ret);
 		}
-	} else {
+#endif
+	} else {	/*disable PWM block */
+#ifdef CONFIG_ZS550ML
+		lnw_gpio_set_alt(info->gpio_pwm, 0);
+		ret = gpio_direction_output(info->gpio_pwm, 0);
+		if (ret)
+			printk("[VIB] write vibra_pwm off value failed, ret = %d\n", ret);
+		ret = gpio_direction_output(info->gpio_en, 0);
+		if (ret)
+			printk("[VIB] write vibra_en off value failed, ret = %d\n", ret);
+#else
 		pr_debug("%s: disable GPO/PWM block\n", __func__);
 		ret = intel_scu_ipc_iowrite8(VIBRAGPO_REG,0x04);
 		if (ret)
-			printk("[VIB] write vibra_disable duty value faild\n");
+			printk("[VIB] write vibra_disable GPO value faild, ret = %d\n", ret);
 		ret = intel_scu_ipc_iowrite8(VIBRAPWM_REG,0x40);
 		if (ret)
-			printk("[VIB] write vibra_disable duty value faild\n");
+			printk("[VIB] write vibra_disable PWM duty value faild, ret = %d\n", ret);
+#endif
 	}
 	return 0;
 }
@@ -509,6 +530,14 @@ static int intel_mid_vibra_probe(struct pci_dev *pci,
 		if (ret != 0) {
 			pr_err("gpio_request(%d) fails:%d\n",
 					info->gpio_en, ret);
+			goto out;
+		}
+
+		ret = gpio_request_one(info->gpio_pwm, GPIOF_DIR_OUT,
+				"VIBRA PWM");
+		if (ret != 0) {
+			pr_err("gpio_request(%d) fails:%d\n",
+					info->gpio_pwm, ret);
 			goto out;
 		}
 	}

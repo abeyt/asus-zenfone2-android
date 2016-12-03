@@ -674,15 +674,9 @@ void intel_dma_do_rx(struct uart_hsu_port *up, u32 int_sts)
 	struct tty_port *tport = &port->state->port;
 	int count;
 
-	trace_hsu_func_start(up->index, __func__);
-
-	if(!up->dma_inited)
-	{
-		dev_warn(up->dev, "%s DMA not init!\n", __func__);
-		trace_hsu_func_end(up->index, __func__, "notty");
+	if (!up->dma_inited)
 		return;
-	}
-
+	trace_hsu_func_start(up->index, __func__);
 	tty = tty_port_tty_get(&up->port.state->port);
 	if (!tty) {
 		trace_hsu_func_end(up->index, __func__, "notty");
@@ -1079,10 +1073,18 @@ static unsigned int serial_hsu_get_mctrl(struct uart_port *port)
 {
 	struct uart_hsu_port *up =
 		container_of(port, struct uart_hsu_port, port);
-	unsigned char status = up->msr;
+	unsigned char status;
 	unsigned int ret = 0;
 
 	trace_hsu_func_start(up->index, __func__);
+
+	if (INTEL_MID_BOARD(2, PHONE, MRFL, BTNS, PRO) ||
+		INTEL_MID_BOARD(2, PHONE, MRFL, BTNS, ENG)) {
+		if (likely(!test_bit(flag_suspend, &up->flags)))
+			up->msr = serial_in(up, UART_MSR);
+	}
+	status = up->msr;
+
 	if (status & UART_MSR_DCD)
 		ret |= TIOCM_CAR;
 	if (status & UART_MSR_RI)

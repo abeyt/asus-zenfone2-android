@@ -57,6 +57,12 @@ config FPS_THROTTLE
 	---help---
 	  register a new cooling device for FPS throttling.
 
+config KL03_HINGE
+	tristate "KL03 Hinge Driver"
+	depends on I2C && SYSFS
+	---help---
+	  Driver for KL03 Hinge
+
 source "drivers/external_drivers/drivers/misc/bcm-lpm/Kconfig"
 source "drivers/external_drivers/drivers/misc/intel_ld/Kconfig"
 source "drivers/external_drivers/drivers/misc/ti-st/Kconfig"

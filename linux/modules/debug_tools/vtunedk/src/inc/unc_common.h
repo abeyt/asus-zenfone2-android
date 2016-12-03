@@ -88,15 +88,16 @@ UNC_COMMON_PCI_Enable_PMU(
 );
 
 
-extern VOID 
+extern VOID
 UNC_COMMON_PCI_Disable_PMU(
-    PVOID            param, 
+    PVOID            param,
     U32              control_msr,
-    U32              ctl_val,
+    U32              enable_val,
+    U32              disable_val,
     DEVICE_CALLBACK  callback
 );
 
-extern VOID 
+extern VOID
 UNC_COMMON_PCI_Clean_Up(
     PVOID param
 );

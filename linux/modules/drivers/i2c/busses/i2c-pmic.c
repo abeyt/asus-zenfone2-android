@@ -316,6 +316,7 @@ unmask_irq_failed:
 err_irq_request:
 	iounmap(pmic_dev->pmic_intr_map);
 ioremap_failed:
+	wake_lock_destroy(&pmic_dev->i2c_wake_lock);
 	kfree(pmic_dev);
 	return ret;
 }
@@ -325,6 +326,7 @@ static int pmic_i2c_remove(struct platform_device *pdev)
 	iounmap(pmic_dev->pmic_intr_map);
 	free_irq(pmic_dev->irq, pmic_dev);
 	pm_runtime_get_noresume(pmic_dev->dev);
+	wake_lock_destroy(&pmic_dev->i2c_wake_lock);
 	kfree(pmic_dev);
 	return 0;
 }

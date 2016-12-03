@@ -41,12 +41,9 @@
 #include <asm/page.h>
 #include <asm/processor.h>
 #include <linux/nmi.h>
-
+#include <linux/module.h>
 #include "unwind.c"
 
-#ifndef VTSS_STACK_LIMIT
-#define VTSS_STACK_LIMIT 0x200000 /* 2Mb */
-#endif
 
 #if defined(CONFIG_X86_64)
 const unsigned long vtss_koffset = (unsigned long)__START_KERNEL_map;
@@ -62,8 +59,74 @@ const unsigned long vtss_kstart = (unsigned long)__START_KERNEL_map + ((CONFIG_P
 const unsigned long vtss_kstart = (unsigned long)PAGE_OFFSET + ((CONFIG_PHYSICAL_START + (CONFIG_PHYSICAL_ALIGN - 1)) & ~(CONFIG_PHYSICAL_ALIGN - 1));
 #endif
 
-#if defined(VTSS_AUTOCONF_STACKTRACE_OPS_WALK_STACK)
 #include <asm/stacktrace.h>
+
+#define VTSS_MOD(mod_rm) ((mod_rm) >> 6)
+#define VTSS_RM(mod_rm) ((mod_rm) & 7)
+#define VTSS_SIB(mod_rm) ((VTSS_MOD(mod_rm) != 3) && (VTSS_RM(mod_rm) == 4))
+#define VTSS_SIB_BASE(sib) ((sib) & 7)
+
+#if defined(CONFIG_X86_64)
+#define VTSS_INDIRECT_CALL(loc) (((loc)[0] == 0xff) && ((((loc)[1] >> 3) & 7) == 2))
+#else
+#define VTSS_INDIRECT_CALL(loc) (((loc)[0] == 0xff) && (((((loc)[1] >> 3) & 7) == 2) || \
+                                 ((((loc)[1] >> 3) & 7) == 3)))
+#endif
+/* number of bytes for displacement */
+static unsigned char displacement (unsigned char mod_rm)
+{
+    switch (VTSS_MOD(mod_rm))
+    {
+    case 0:
+        if (VTSS_RM(mod_rm) == 5)
+        {
+            return 4;
+        }
+        else
+        {
+           return 0;
+        }
+    case 1:
+        return 1;
+    case 2:
+        return 4;
+    case 3:
+        return 0;
+    default:
+        return 0;
+    }
+}
+#define VTSS_IS_NEAR_DIRECT_CALL(loc) ((*((loc) - 3) == 0xe8) || (*((loc) - 5) == 0xe8))
+
+#if defined(CONFIG_X86_64)
+#define VTSS_IS_FAR_DIRECT_CALL(loc) (0)
+#else
+#define VTSS_IS_FAR_DIRECT_CALL(loc) ((*((loc) - 4) == 0x9a) || (*((loc) - 6) == 0x9a))
+#endif
+
+#define VTSS_IS_INDIRECT_CALL2(loc) \
+    (VTSS_INDIRECT_CALL((loc) - 2) && !VTSS_SIB(loc[-1]) && !displacement((loc)[-1]))
+
+#define VTSS_IS_INDIRECT_CALL3(loc) \
+    (VTSS_INDIRECT_CALL((loc) - 3) && \
+    ((VTSS_SIB((loc)[-2]) && !displacement((loc)[-2])) || (!VTSS_SIB((loc)[-2]) && displacement((loc)[-2]) == 1)))
+#define VTSS_IS_INDIRECT_CALL4(loc) \
+    (VTSS_INDIRECT_CALL((loc) - 4) && \
+    ((VTSS_SIB((loc)[-3]) && displacement((loc)[-3]) == 1) || \
+    ((VTSS_SIB((loc)[-3])) && ((VTSS_SIB_BASE((loc)[-2]) == 5) && (VTSS_MOD((loc)[-3]) == 1)))))
+#define VTSS_IS_INDIRECT_CALL6(loc) \
+    (VTSS_INDIRECT_CALL((loc) - 6) && \
+    (!VTSS_SIB((loc)[-5]) && displacement((loc)[-5]) == 4))
+#define VTSS_IS_INDIRECT_CALL7(loc) \
+    (VTSS_INDIRECT_CALL((loc) - 7) && \
+    ((VTSS_SIB((loc)[-6]) && displacement((loc)[-6]) == 4) || \
+    (VTSS_SIB((loc)[-6]) && ((VTSS_SIB_BASE((loc)[-5]) == 5) && ((VTSS_MOD((loc)[-6]) == 0) || \
+                                                                (VTSS_MOD((loc)[-6]) == 2))))))
+#define VTSS_CHECK_PREVIOUS_CALL_INSTRUCTION(loc) \
+    (VTSS_IS_NEAR_DIRECT_CALL((loc)) || VTSS_IS_FAR_DIRECT_CALL((loc)) || \
+     VTSS_IS_INDIRECT_CALL2((loc)) || VTSS_IS_INDIRECT_CALL3((loc)) || \
+     VTSS_IS_INDIRECT_CALL4((loc)) || VTSS_IS_INDIRECT_CALL6((loc)) || \
+     VTSS_IS_INDIRECT_CALL7((loc)))
 
 #ifdef VTSS_AUTOCONF_STACKTRACE_OPS_WARNING
 static void vtss_warning(void *data, char *msg)
@@ -82,12 +145,19 @@ typedef struct kernel_stack_control_t
     int* kernel_callchain_size;
     int* kernel_callchain_pos;
     unsigned long prev_addr;
+    int done;
 //    struct vtss_transport_data* trnd;
 } kernel_stack_control_t;
 
 
 static int vtss_stack_stack(void *data, char *name)
 {
+    kernel_stack_control_t* stk = (kernel_stack_control_t*)data;
+    if (!stk) return -1;
+    if (stk->done){
+        ERROR("Error happens during stack processing");
+        return -1;
+    }
     return 0;
 }
 
@@ -101,7 +171,29 @@ static void vtss_stack_address(void *data, unsigned long addr, int reliable)
     TRACE("%s%pB %d", reliable ? "" : "? ", (void*)addr, *stk->kernel_callchain_pos);
     touch_nmi_watchdog();
     if (!reliable){
-        return;
+#if 0
+//#ifndef CONFIG_FRAME_POINTER
+     INFO ("addr = %lx", addr);
+     if (addr < vtss_kstart+7){
+         INFO("addr < kstart (%lx<%lx)", addr, vtss_kstart);
+         return;
+     }
+     if ((__virt_addr_valid(addr)&&__virt_addr_valid(addr-7))||(__module_text_address(addr)&&__module_text_address(addr-7)))
+     {
+         unsigned char* loc = (unsigned char*)addr;
+         if (!VTSS_CHECK_PREVIOUS_CALL_INSTRUCTION((unsigned char*)addr)){
+             INFO("!prev instr is not a call");
+             return;
+         }
+         INFO("value = %2x%2x%2x%2x%2x%2x%2x%2x", (int)loc[-7], (int)loc[-6], (int)loc[-5], (int)loc[-4], (int)loc[-3], (int)loc[-2], (int)loc[-1], (int)loc[0]);
+         dump_stack();
+     }else{
+         INFO("!virt_addr_valid");
+         return;
+     }
+#else
+     return;
+#endif
     }
     if (!stk || !stk->kernel_callchain_size || !stk->kernel_callchain_pos){
         return;
@@ -112,12 +204,8 @@ static void vtss_stack_address(void *data, unsigned long addr, int reliable)
 #ifndef CONFIG_FRAME_POINTER
     if (addr < vtss_koffset) return;
 #endif
-    if (stk->prev_addr != 0) {
-        addr_diff = addr - stk->prev_addr;
-    }
-    else {
-        addr_diff = addr;
-    }
+    if (stk->done) return;
+    addr_diff = addr - stk->prev_addr;
     sign = (addr_diff & (((size_t)1) << ((sizeof(size_t) << 3) - 1))) ? 0xff : 0;
     for (j = sizeof(void*) - 1; j >= 0; j--)
     {
@@ -141,6 +229,7 @@ static void vtss_stack_address(void *data, unsigned long addr, int reliable)
     stk->prev_addr = addr;
 }
 
+#if defined(VTSS_AUTOCONF_STACKTRACE_OPS_WALK_STACK)
 static unsigned long vtss_stack_walk(
     struct thread_info *tinfo,
     unsigned long *stack,
@@ -151,12 +240,13 @@ static unsigned long vtss_stack_walk(
     int *graph)
 {
     kernel_stack_control_t* stk = (kernel_stack_control_t*)data;
-//    unsigned long* pbp = &stk->bp;
     if (!stk){
+        ERROR("Internal error!");
         return bp;
     }
     if (!stack){
         ERROR("Broken stack pointer!");
+        stk->done=1;
         return bp;
     }
     if (stack <= (unsigned long*)vtss_max_user_space){
@@ -164,9 +254,16 @@ static unsigned long vtss_stack_walk(
 //        snprintf(dbgmsg, sizeof(dbgmsg)-1, "vtss_stack_walk: stack_ptr=%p, vtss_koffset=%lx, vtss_kstart=%lx", stack, vtss_koffset, vtss_kstart);
 //        vtss_record_debug_info(stk->trnd, dbgmsg, 0);
         ERROR("Stack pointer belongs user space. We will not process it. stack_ptr=%p", stack);
+        if (stk->kernel_callchain_pos && *stk->kernel_callchain_pos == 0){
+            ERROR("Most probably stack pointer intitialization is wrong. No one stack address is resolved.");
+        }
+        stk->done=1;
         return bp;
     }
     TRACE("bp=0x%p, stack=0x%p, end=0x%p", (void*)stk->bp, stack, end);
+    if (stk->done){
+        return bp;
+    }
     bp = print_context_stack(tinfo, stack, stk->bp, ops, data, end, graph);
     if (stk != NULL && bp < vtss_kstart) {
         TRACE("user bp=0x%p", (void*)bp);
@@ -174,6 +271,7 @@ static unsigned long vtss_stack_walk(
     }
     return bp;
 }
+#endif
 
 static const struct stacktrace_ops vtss_stack_ops = {
 #ifdef VTSS_AUTOCONF_STACKTRACE_OPS_WARNING
@@ -182,11 +280,10 @@ static const struct stacktrace_ops vtss_stack_ops = {
 #endif
     .stack          = vtss_stack_stack,
     .address        = vtss_stack_address,
+#if defined(VTSS_AUTOCONF_STACKTRACE_OPS_WALK_STACK)
     .walk_stack     = vtss_stack_walk,
-
+#endif
 };
-
-#endif /* CONFIG_X86_64 && VTSS_AUTOCONF_STACKTRACE_OPS_WALK_STACK */
 
 int vtss_stack_dump(struct vtss_transport_data* trnd, stack_control_t* stk, struct task_struct* task, struct pt_regs* regs_in, void* reg_fp, int in_irq)
 {
@@ -224,26 +321,19 @@ int vtss_stack_dump(struct vtss_transport_data* trnd, stack_control_t* stk, stru
     stk->sp.vdp = reg_sp;
     stk->fp.vdp = reg_fp;
 
-#if defined(VTSS_AUTOCONF_STACKTRACE_OPS_WALK_STACK)
-//    if (unlikely(!user_mode_vm(regs)))
     if (kernel_stack)
     { /* Unwind kernel stack and get user BP if possible */
         kernel_stack_control_t k_stk;
-//        k_stk.trnd=trnd;
 
         if ((unsigned long)reg_fp < 0x1000 || (unsigned long)reg_fp == (unsigned long)-1) reg_fp = 0;//error instead of bp;
         k_stk.bp = (unsigned long)reg_fp;
-//        if (k_stk.bp < 0x1000){
-             //error instead of bp
-//             k_stk.bp = 0; 
-//             REG(bp, regs_in) = 0;
-//        }
         
         k_stk.kernel_callchain = stk->kernel_callchain;
         k_stk.prev_addr = 0;
         k_stk.kernel_callchain_size = &stk->kernel_callchain_size;
         k_stk.kernel_callchain_pos =  &stk->kernel_callchain_pos;
         *k_stk.kernel_callchain_pos = 0;
+        k_stk.done = 0;
         TRACE("ip=0x%p, sp=0x%p, fp=0x%p, stk->kernel_callchain_pos=%d", reg_ip, reg_sp, reg_fp, stk->kernel_callchain_pos);
 #ifdef VTSS_AUTOCONF_DUMP_TRACE_HAVE_BP
         dump_trace(task, regs_in , NULL, 0, &vtss_stack_ops, &k_stk);
@@ -270,11 +360,10 @@ int vtss_stack_dump(struct vtss_transport_data* trnd, stack_control_t* stk, stru
     {
         stk->kernel_callchain_pos = 0;
     }
-#endif /* CONFIG_X86_64 && VTSS_AUTOCONF_STACKTRACE_OPS_WALK_STACK */
 
-    if (unlikely(!user_mode_vm(regs))) {
+    if (!user_mode_vm(regs)) {
         /* kernel mode regs, so get a user mode regs */
-#if defined(CONFIG_X86_64) || LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,38)
+#if defined(CONFIG_X86_64) || LINUX_VERSION_CODE > KERNEL_VERSION(2,6,32) || (!defined CONFIG_HIGHMEM)
         regs = task_pt_regs(task); /*< get user mode regs */
         if (regs == NULL || !user_mode_vm(regs))
 #endif
@@ -285,6 +374,8 @@ int vtss_stack_dump(struct vtss_transport_data* trnd, stack_control_t* stk, stru
             dump_stack();
 #endif
             strcat(stk->dbgmsg, "Stack_dump3: cannot get user mode registers!");
+
+
             vtss_record_debug_info(trnd, stk->dbgmsg, 0);
             return -EFAULT;
         }
@@ -292,6 +383,14 @@ int vtss_stack_dump(struct vtss_transport_data* trnd, stack_control_t* stk, stru
     /* Get IP and SP registers from user space */
     reg_ip = (void*)REG(ip, regs);
     reg_sp = (void*)REG(sp, regs);
+#ifdef CONFIG_FRAME_POINTER
+    if (reg_fp >= (void*)vtss_koffset)
+#endif
+        reg_fp = (void*)REG(bp, regs);
+
+    if (reg_fp >= (void*)vtss_koffset){
+        reg_fp = reg_sp;
+    }
 
     { /* Check for correct stack range in task->mm */
         struct vm_area_struct* vma;
@@ -340,19 +439,20 @@ int vtss_stack_dump(struct vtss_transport_data* trnd, stack_control_t* stk, stru
         if (likely(vma != NULL)) {
             unsigned long vm_start = vma->vm_start + ((vma->vm_flags & VM_GROWSDOWN) ? PAGE_SIZE : 0UL);
             unsigned long vm_end   = vma->vm_end;
+            unsigned long stack_limit = (unsigned long)stack_base;
 
 //            TRACE("vma=[0x%lx - 0x%lx], flags=0x%lx", vma->vm_start, vma->vm_end, vma->vm_flags);
             if ((unsigned long)reg_sp < vm_start ||
                 (vma->vm_flags & (VM_READ | VM_WRITE)) != (VM_READ | VM_WRITE))
             {
-#ifdef VTSS_DEBUG_TRACE
+//#ifdef VTSS_DEBUG_TRACE
                 rc = snprintf(stk->dbgmsg, sizeof(stk->dbgmsg)-1, "tid=0x%08x, cpu=0x%08x, ip=0x%p, sp=[0x%p,0x%p], fp=0x%p, found_vma=[0x%lx,0x%lx]: Unable to find user stack boundaries",
                                 task->pid, smp_processor_id(), reg_ip, reg_sp, stack_base, reg_fp, vm_start, vm_end);
                 if (rc > 0 && rc < sizeof(stk->dbgmsg)-1) {
                     stk->dbgmsg[rc] = '\0';
                     vtss_record_debug_info(trnd, stk->dbgmsg, 0);
                 }
-#endif
+//#endif
                 strcat(stk->dbgmsg, "Stack_dump6: not valid fma!");
                 vtss_record_debug_info(trnd, stk->dbgmsg, 0);
                 return -EFAULT;
@@ -366,20 +466,28 @@ int vtss_stack_dump(struct vtss_transport_data* trnd, stack_control_t* stk, stru
                 }
                 stack_base = (void*)vm_end;
                 stk->clear(stk);
-#ifdef VTSS_STACK_LIMIT
-                stack_base = (void*)min((unsigned long)reg_sp + VTSS_STACK_LIMIT, vm_end);
-                if ((unsigned long)stack_base != vm_end) {
-                    TRACE("Limiting stack base to 0x%lx instead of 0x%lx, drop 0x%lx bytes", (unsigned long)stack_base, vm_end, (vm_end - (unsigned long)stack_base));
                 }
+            //INFO("stk size = %lx, stack_base = %p, regsp = %p, req_stk_size=%lx", (unsigned long)stack_base - (unsigned long)reg_sp, stack_base, reg_sp, reqcfg.stk_sz[vtss_stk_user]);
+            if ((unsigned long)stack_base - (unsigned long)reg_sp > reqcfg.stk_sz[vtss_stk_user]){
+                unsigned long stack_base_calc = min((unsigned long)stack_base, ((unsigned long)reg_sp + reqcfg.stk_sz[vtss_stk_user])&(~(reqcfg.stk_pg_sz[vtss_stk_user]-1)));
+                if (stack_base_calc < (unsigned long)stack_base){
+                    TRACE("Limiting stack base to 0x%lx instead of 0x%lx, drop 0x%lx bytes", stack_base_calc, (unsigned long)stack_base, ((unsigned long)stack_base - stack_base_calc));
+              //      INFO("Limiting stack base to 0x%lx instead of 0x%lx, drop 0x%lx bytes", stack_base_calc, (unsigned long)stack_base, ((unsigned long)stack_base - stack_base_calc));
+                    stack_base = (void*)stack_base_calc;
+                }
+            }
             } else {
-                stack_base = (void*)min((unsigned long)reg_sp + VTSS_STACK_LIMIT, vm_end);
-                if ((unsigned long)stack_base != vm_end) {
-                    TRACE("Limiting stack base to 0x%lx instead of 0x%lx, drop 0x%lx bytes", (unsigned long)stack_base, vm_end, (vm_end - (unsigned long)stack_base));
+            rc = snprintf(stk->dbgmsg, sizeof(stk->dbgmsg)-1, "tid=0x%08x, cpu=0x%08x, ip=0x%p, sp=[0x%p,0x%p], fp=0x%p: Unable to find executable region 2",
+                            task->pid, smp_processor_id(), reg_ip, reg_sp, stack_base, reg_fp);
+            if (rc > 0 && rc < sizeof(stk->dbgmsg)-1) {
+                stk->dbgmsg[rc] = '\0';
+                vtss_record_debug_info(trnd, stk->dbgmsg, 0);
                 }
-#endif /* VTSS_STACK_LIMIT */
+            strcat(stk->dbgmsg, "Stack_dump5: no vma on sp!");
+            vtss_record_debug_info(trnd, stk->dbgmsg, 0);
+            return -EFAULT;
             }
         }
-    }
 
 #ifdef VTSS_DEBUG_TRACE
     /* Create a common header for debug message */

@@ -183,13 +183,6 @@ int get_gpio_on(void *data)
 	return cpu_data->gpio_on_key;
 }
 
-int get_gpio_apcdump(void *data)
-{
-	struct mdm_ctrl_cpu_data *cpu_data = data;
-	return cpu_data->gpio_apcdump;
-}
-
-
 int cpu_init_gpio_ngff(void *data)
 {
 	struct mdm_ctrl_cpu_data *cpu_data = data;

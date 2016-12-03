@@ -27,7 +27,6 @@
 #include <linux/gpio.h>
 #include <linux/intel_mid_pm.h>
 #include <asm/intel_scu_pmic.h>
-#include <linux/i2c/rt4532.h>
 
 #include "mdfld_dsi_dpi.h"
 #include "mdfld_dsi_pkg_sender.h"
@@ -69,7 +68,7 @@ static int panel_reset_gpio;
 static int panel_en_gpio;
 static int backlight_en_gpio;
 static int backlight_pwm_gpio;
-
+static int lcm_enp_gpio;
 
 struct mipi_dsi_cmd{
 	int delay;
@@ -1389,10 +1388,12 @@ nt35596_vid_dsi_controller_init(struct mdfld_dsi_config *dsi_config)
 		printk("[DISP] AUO Panel initial cmds registered\n");
 		nt35596_power_on_table = ze551ml_AUO_power_on_table;
 		nt35596_power_on_table_size = ARRAY_SIZE(ze551ml_AUO_power_on_table);
+#if !(defined(CONFIG_ZS570ML) || defined(CONFIG_ZS550ML))
 	} else if (Read_HW_ID() == HW_ID_SR1 || Read_HW_ID() == HW_ID_SR2) {
 		printk("[DISP] TM SR Panel initial cmds registered\n");
 		nt35596_power_on_table = ze551ml_power_on_table;
 		nt35596_power_on_table_size = ARRAY_SIZE(ze551ml_power_on_table);
+#endif
 	} else {
 		printk("[DISP] TM ER Panel initial cmds registered\n");
 		nt35596_power_on_table = ze551ml_TM_ER_power_on_table;
@@ -1481,7 +1482,11 @@ static int nt35596_vid_reset(struct mdfld_dsi_config *dsi_config)
 	printk("[DISP] %s\n", __func__);
 
 	/* Open 2V9 power */
-	__vpro3_power_ctrl(true);
+	if (Read_PROJ_ID() == PROJ_ID_ZS550ML) {
+		gpio_set_value_cansleep(lcm_enp_gpio, 1);
+	} else {
+		__vpro3_power_ctrl(true);
+	}
 	usleep_range(15000, 15100);
 /* postpone to drv_ic_init
 	gpio_set_value_cansleep(panel_reset_gpio, 1);
@@ -1502,9 +1507,6 @@ static int nt35596_vid_set_brightness(struct mdfld_dsi_config *dsi_config,
 	union pwmctrl_reg pwmctrl;
 	static void __iomem *bl_en_mmio;
 
-#ifdef CONFIG_BACKLIGHT_RT4532
-	rt4532_brightness_set(level);
-#endif
 	/* Re-assign the minimum brightness value to 15 */
 	if (level > 0 && level <= 15)
 		level = 15;
@@ -1639,6 +1641,19 @@ static int nt35596_vid_detect(struct mdfld_dsi_config *dsi_config)
 	pmu_set_pwm(PCI_D0);
 	lnw_gpio_set_alt(backlight_pwm_gpio, 1);
 #endif
+
+	if (Read_PROJ_ID() == PROJ_ID_ZS550ML) {
+		lcm_enp_gpio = get_gpio_by_name("LCM_ENP");
+		if (lcm_enp_gpio < 0) {
+			DRM_ERROR("Faild to get panel reset gpio\n");
+			return -EINVAL;
+		}
+
+		if (gpio_request(lcm_enp_gpio, "lcm_enp")) {
+			DRM_ERROR("Faild to request lcm enp gpio\n");
+			return -EINVAL;
+		}
+	}
 
 	dsi_config->dsi_hw_context.panel_on = false;
 

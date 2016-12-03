@@ -26,14 +26,13 @@
 #include "inc/ecb_iterators.h"
 #include "inc/pci.h"
 
-#if defined(DRV_ANDROID)
+#if defined(PCI_HELPERS_API)
 #include <asm/intel_mid_pcihelpers.h>
 #endif
 
-extern U32            invoking_processor_id;
 static U32            sochap_overflow[VLV_CHAP_MAX_COUNTERS];
 static U32            chap_port_id = 0;
-extern U64           *read_unc_ctr_info;
+extern U64           *read_counter_info;
 //global variable for reading  counter values
 static U64           *visa_current_data = NULL;
 static U64           *visa_to_read_data = NULL;
@@ -77,10 +76,9 @@ write_To_Sideband (
     U32 cmd  = 0;
     U32 mmio_offset_lo;
     U32 mmio_offset_hi;
-#if !defined(DRV_ANDROID)
+#if !defined(PCI_HELPERS_API)
     U32 pci_address;
 #endif
-
     mmio_offset_hi = mmio_offset & VLV_VISA_OFFSET_HI_MASK;
     mmio_offset_lo = mmio_offset & VLV_VISA_OFFSET_LO_MASK;
     cmd            = (op_code << VLV_VISA_OP_CODE_SHIFT) +
@@ -89,13 +87,13 @@ write_To_Sideband (
                      (VLV_VISA_BYTE_ENABLES << 4);
     SEP_PRINT_DEBUG("write off=%llx value=%x\n", mmio_offset, value);
 
-#if defined(DRV_ANDROID)
+#if defined(PCI_HELPERS_API)
     intel_mid_msgbus_write32_raw_ext(cmd, mmio_offset_hi, value);
 #else
     pci_address = FORM_PCI_ADDR(bus_no, dev_no, func_no, VLV_VISA_MDR_REG_OFFSET);
     PCI_Write_Ulong((ULONG)pci_address, (ULONG)value);
     pci_address = FORM_PCI_ADDR(bus_no, dev_no, func_no, VLV_VISA_MCRX_REG_OFFSET);
-    PCI_Write_Ulong((ULONG)pci_address, (mmio_offset_hi << 8));
+    PCI_Write_Ulong((ULONG)pci_address, mmio_offset_hi);
     pci_address = FORM_PCI_ADDR(bus_no, dev_no, func_no, VLV_VISA_MCR_REG_OFFSET);
     PCI_Write_Ulong((ULONG)pci_address, cmd);
 #endif
@@ -139,7 +137,7 @@ read_From_Sideband (
     U32   cmd  = 0;
     U32   mmio_offset_hi;
     U32   mmio_offset_lo;
-#if !defined(DRV_ANDROID)
+#if !defined(PCI_HELPERS_API)
     U32   pci_address;
 #endif
 
@@ -150,11 +148,11 @@ read_From_Sideband (
                      (mmio_offset_lo << 8) +
                      (VLV_VISA_BYTE_ENABLES << 4);
 
-#if defined(DRV_ANDROID)
+#if defined(PCI_HELPERS_API)
     data = intel_mid_msgbus_read32_raw_ext(cmd, mmio_offset_hi);
 #else
     pci_address = FORM_PCI_ADDR(bus_no, dev_no, func_no, VLV_VISA_MCRX_REG_OFFSET);
-    PCI_Write_Ulong((ULONG)pci_address, (mmio_offset_hi << 8));
+    PCI_Write_Ulong((ULONG)pci_address, mmio_offset_hi);
     pci_address = FORM_PCI_ADDR(bus_no, dev_no, func_no, VLV_VISA_MCR_REG_OFFSET);
     PCI_Write_Ulong((ULONG)pci_address, cmd);
     pci_address = FORM_PCI_ADDR(bus_no, dev_no, func_no, VLV_VISA_MDR_REG_OFFSET);
@@ -294,7 +292,7 @@ valleyview_VISA_Write_PMU (
 )
 {
     U32                        dev_idx  = *((U32*)param);
-    int                        me       = CONTROL_THIS_CPU();
+    int                        this_cpu = CONTROL_THIS_CPU();
     U32                        cur_grp  = LWPMU_DEVICE_cur_group(&devices[(dev_idx)]);
     ECB                        pecb     = LWPMU_DEVICE_PMU_register_data(&devices[dev_idx])[cur_grp];
     DRV_PCI_DEVICE_ENTRY       dpden;
@@ -314,8 +312,9 @@ valleyview_VISA_Write_PMU (
     U64                        mmio_offset     = 0;
     U64                        map_base        = 0;
     U32                        i               = 0;
+    CPU_STATE                  pcpu            = &pcb[this_cpu];
 
-    if (me != invoking_processor_id) {
+    if (!CPU_STATE_system_master(pcpu)) {
         return;
     }
 
@@ -436,12 +435,14 @@ valleyview_VISA_Enable_PMU (
     PVOID  param
 )
 {
-    U32 me        = CONTROL_THIS_CPU();
+    U32 this_cpu  = CONTROL_THIS_CPU();
     U32 dev_idx   = *((U32*)param);
+    CPU_STATE pcpu  = &pcb[this_cpu];
 
-    if (me != invoking_processor_id) {
+    if (!CPU_STATE_system_master(pcpu)) {
         return;
     }
+
     SEP_PRINT_DEBUG("Starting the counters...\n");
     if (visa_current_data) {
         memset(visa_current_data, 0, (VLV_CHAP_MAX_COUNTERS+1)*sizeof(U64));
@@ -468,10 +469,11 @@ valleyview_VISA_Disable_PMU (
     PVOID  param
 )
 {
-    U32                   me        = CONTROL_THIS_CPU();
+    U32                   this_cpu  = CONTROL_THIS_CPU();
     U32                   dev_idx   = *((U32*)param);
+    CPU_STATE             pcpu      = &pcb[this_cpu];
 
-    if (me != invoking_processor_id) {
+    if (!CPU_STATE_system_master(pcpu)) {
         return;
     }
     SEP_PRINT_DEBUG("Stopping the counters...\n");
@@ -608,7 +610,7 @@ valleyview_VISA_Read_PMU_Data (
 )
 {
     S32                   j;
-    U64                  *buffer       = read_unc_ctr_info;
+    U64                  *buffer       = read_counter_info;
     U32                   dev_idx      = *((U32*)param);
     U32                   start_index;
     DRV_CONFIG            pcfg_unc;

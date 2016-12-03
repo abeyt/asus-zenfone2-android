@@ -273,7 +273,6 @@ struct dlp_xfer_ctx {
 
 	struct timer_list timer;
 	rwlock_t lock;
-	struct mutex cmd_sync;
 	unsigned long delay;
 	atomic_t link_state;
 	unsigned int link_flag;
@@ -393,7 +392,6 @@ struct dlp_driver {
 	unsigned int tx_timeout;
 	struct notifier_block nb;
 	atomic_t drv_remove_ongoing;
-	atomic_t is_tty_device_closed;
 	struct timer_list timer[DLP_CHANNEL_COUNT];
 
 	/* Workqueue for tty buffer forwarding */

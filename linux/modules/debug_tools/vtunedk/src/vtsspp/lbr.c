@@ -39,12 +39,12 @@
 #define LBR_ENABLE_MASK_HSW 0x0201
 #define LBR_SELECT_MASK_HSW 0x03c5
 
-static int vtss_lbr_no       = 0;
-static int vtss_lbr_msr_ctl  = 0;
-static int vtss_lbr_msr_from = 0;
-static int vtss_lbr_msr_to   = 0;
-static int vtss_lbr_msr_tos  = 0;
-static int vtss_lbr_msr_sel  = 0;
+int vtss_lbr_no       = 0;
+int vtss_lbr_msr_ctl  = 0;
+int vtss_lbr_msr_from = 0;
+int vtss_lbr_msr_to   = 0;
+int vtss_lbr_msr_tos  = 0;
+int vtss_lbr_msr_sel  = 0;
 
 /// clear stack trace record
 typedef struct

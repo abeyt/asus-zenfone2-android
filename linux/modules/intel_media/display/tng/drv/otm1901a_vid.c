@@ -26,7 +26,6 @@
 #include <linux/lnw_gpio.h>
 #include <linux/intel_mid_pm.h>
 #include <asm/intel_scu_pmic.h>
-#include <linux/i2c/rt4532.h>
 
 #include "mdfld_dsi_dpi.h"
 #include "mdfld_dsi_pkg_sender.h"
@@ -443,10 +442,6 @@ static int otm1901a_vid_set_brightness(struct mdfld_dsi_config *dsi_config,
 	u32 reg_level = ~level & 0xFF;
 	union pwmctrl_reg pwmctrl;
 	static void __iomem *bl_en_mmio;
-
-#ifdef CONFIG_BACKLIGHT_RT4532
-	rt4532_brightness_set(level);
-#endif
 
 	pwmctrl.part.pwmswupdate = 0x1;
 	pwmctrl.part.pwmbu = PWM_BASE_UNIT;

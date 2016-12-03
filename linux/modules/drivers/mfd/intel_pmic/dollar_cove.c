@@ -30,7 +30,9 @@
 #include <linux/power/dc_xpwr_charger.h>
 #include <linux/regulator/intel_dcovex_regulator.h>
 #include <asm/intel_em_config.h>
+#include <linux/power/battery_id.h>
 #include "./pmic.h"
+#include <asm/spid.h>
 
 enum {
 	VBUS_FALLING_IRQ = 2,
@@ -305,7 +307,28 @@ struct intel_pmic_irqregmap dollar_cove_irqregmap[] = {
 };
 
 
+
+
 #ifdef CONFIG_POWER_SUPPLY_CHARGER
+static struct ps_pse_mod_prof atl_820_batt = {
+	"ATL820",
+	512,
+	800,
+	4350,
+	80,
+	3000,
+	60,
+	-20,
+	4,
+	{
+		{60, 0, 0, 0, 0, 0},
+		{45, 4350, 600, 4250, 4350, 20},
+		{23, 4350, 240, 4250, 4350, 20},
+		{10, 4350, 80, 4250, 4350, 20},
+	},
+	0,
+};
+
 #define DC_CHRG_CHRG_CUR_NOLIMIT	1800
 #define DC_CHRG_CHRG_CUR_MEDIUM		1400
 #define DC_CHRG_CHRG_CUR_LOW		1000
@@ -336,12 +359,26 @@ static char *dc_chrg_supplied_to[] = {
 
 static void *platform_get_batt_charge_profile(void)
 {
+#ifdef CONFIG_BTNS_PMIC
+	int retval = 0;
+	retval = get_batt_prop(&ps_batt_chrg_prof);
+	if (retval) {
+		pr_err("Error reading battery profile from battid framework. Use hard coded value.\n");
+		memcpy(&batt_chg_profile, &atl_820_batt, sizeof(struct ps_pse_mod_prof));
+		ps_batt_chrg_prof.batt_prof = &batt_chg_profile;
+		ps_batt_chrg_prof.chrg_prof_type = PSE_MOD_CHRG_PROF;
+	}
+#if defined(CONFIG_POWER_SUPPLY_CHARGING_ALGO_STEP) && defined(CONFIG_POWER_SUPPLY_BATTID)
+	ps_batt_chrg_prof.chrg_prof_type = STEP_MOD_CHRG_PROF;
+#endif
+#else
 	if (!em_config_get_charge_profile(&batt_chg_profile))
 		ps_batt_chrg_prof.chrg_prof_type = CHRG_PROF_NONE;
 	else
 		ps_batt_chrg_prof.chrg_prof_type = PSE_MOD_CHRG_PROF;
 
 	ps_batt_chrg_prof.batt_prof = &batt_chg_profile;
+#endif
 	battery_prop_changed(POWER_SUPPLY_BATTERY_INSERTED, &ps_batt_chrg_prof);
 	return &ps_batt_chrg_prof;
 }
@@ -363,6 +400,17 @@ static void dc_xpwr_chrg_pdata(void)
 	static struct dollarcove_chrg_pdata pdata;
 	int ret;
 
+#ifdef CONFIG_BTNS_PMIC
+	pdata.max_cc = 600;
+	pdata.max_cv = 4350;
+	pdata.def_cc = 500;
+	pdata.def_cv = 4350;
+	pdata.def_ilim = 900;
+	pdata.def_iterm = 300;
+	pdata.def_max_temp = 45;
+	pdata.def_min_temp = 0;
+	pdata.otg_gpio = -1;
+#else
 	pdata.max_cc = 2000;
 	pdata.max_cv = 4350;
 	pdata.def_cc = 500;
@@ -381,7 +429,7 @@ static void dc_xpwr_chrg_pdata(void)
 	} else {
 		lnw_gpio_set_alt(pdata.otg_gpio, 0);
 	}
-
+#endif
 	platform_init_chrg_params(&pdata);
 
 	intel_mid_pmic_set_pdata("dollar_cove_charger",
@@ -393,7 +441,17 @@ static void dc_xpwr_fg_pdata(void)
 	static struct dollarcove_fg_pdata pdata;
 	struct em_config_oem0_data data;
 	int i;
+#ifdef CONFIG_BTNS_PMIC
+	snprintf(pdata.battid, (BATTID_LEN + 1),
+			"%s", "INTN0001");
+	pdata.technology = POWER_SUPPLY_TECHNOLOGY_LION;
 
+	pdata.design_cap = 728;
+	pdata.design_min_volt = 3550;
+	pdata.design_max_volt = 4350;
+	pdata.max_temp = 45;
+	pdata.min_temp = 0;
+#else
 	if (em_config_get_oem0_data(&data)) {
 		snprintf(pdata.battid, (BATTID_LEN + 1),
 				"%s", "INTN0001");
@@ -409,7 +467,7 @@ static void dc_xpwr_fg_pdata(void)
 	pdata.design_max_volt = 4350;
 	pdata.max_temp = 55;
 	pdata.min_temp = 0;
-
+#endif
 	intel_mid_pmic_set_pdata("dollar_cove_battery",
 				(void *)&pdata, sizeof(pdata), 0);
 }

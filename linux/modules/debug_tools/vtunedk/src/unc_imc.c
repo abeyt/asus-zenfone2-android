@@ -196,6 +196,7 @@ unc_imc_ivt_Disable_PMU(
 {
     UNC_COMMON_PCI_Disable_PMU(param, 
                                IVYTOWN_UBOX_GLOBAL_CONTROL_MSR,
+                               ENABLE_IMC_COUNTERS,
                                DISABLE_IMC_COUNTERS,
                                &unc_imc_ivt_callback); 
     return;
@@ -301,6 +302,7 @@ unc_imc_hsx_Disable_PMU(
 {
     UNC_COMMON_PCI_Disable_PMU(param, 
                                HASWELL_SERVER_UBOX_GLOBAL_CONTROL_MSR,
+                               ENABLE_HASWELL_SERVER_IMC_COUNTERS,
                                DISABLE_HASWELL_SERVER_IMC_COUNTERS,
                                &unc_imc_hsx_callback);
     return;
@@ -402,12 +404,18 @@ unc_imc_Get_DIMM_Info (
     U32 channel_num = 0;
     U32 i;
     U32 dimm_idx   = 0;
+    U32 num_pkgs   = num_packages;
  
     if (unc_package_to_bus_map == NULL) {
         UNC_COMMON_Do_Bus_to_Socket_Map(ubox_did);
     }
+    if (num_packages > MAX_PACKAGES) {
+        SEP_PRINT_ERROR("unc_imc_Get_DIMM_Info: num_packages %d exceeds MAX_PACKAGE %d, only retrieve info for %d packages\n",
+                         num_packages, MAX_PACKAGES, MAX_PACKAGES);
+        num_pkgs = MAX_PACKAGES;
+    }
  
-    for (i = 0; i < num_packages; i++) {
+    for (i = 0; i < num_pkgs; i++) {
         bus_num = unc_package_to_bus_map[i];
  
         // channels 0 - 3

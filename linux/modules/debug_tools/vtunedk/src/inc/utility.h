@@ -70,7 +70,9 @@ extern U64
 SYS_Read_MSR (U32 msr);
 #endif
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,29)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,14,0) || (LINUX_VERSION_CODE >= KERNEL_VERSION(3,5,0) && defined(CONFIG_UIDGID_STRICT_TYPE_CHECKS))
+#define DRV_GET_UID(p)      p->cred->uid.val
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,29)
 #define DRV_GET_UID(p)      p->cred->uid
 #else
 #define DRV_GET_UID(p)      p->uid

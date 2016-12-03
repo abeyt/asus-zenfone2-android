@@ -38,12 +38,12 @@ extern DISPATCH_NODE  perfver4_dispatch_htoff_mode;
 #define PERFVER4_UNC_DISABLE_BL_BYPASS_MSR 0x39C
 
 #if defined(DRV_IA32)
-#define LBR_DATA_BITS                      32
+#define PERFVER4_LBR_DATA_BITS             32
 #else
-#define LBR_DATA_BITS                      48
+#define PERFVER4_LBR_DATA_BITS             57
 #endif
 
-#define LBR_BITMASK                        ((1ULL << LBR_DATA_BITS) -1)
+#define PERFVER4_LBR_BITMASK               ((1ULL << PERFVER4_LBR_DATA_BITS) -1)
 
 #define PERFVER4_FROZEN_BIT_MASK           0xc00000000000000ULL
 #define PERFVER4_OVERFLOW_BIT_MASK_HT_ON   0x600000070000000FULL

@@ -29,7 +29,7 @@
 #define _VTSS_CPUEVENTS_H_
 
 #include "vtss_autoconf.h"
-#include "vtssrtcfg.h"          /* for cpuevent_cfg_v1_t */
+#include "vtsscfg.h"          /* for cpuevent_cfg_v1_t */
 
 #include <linux/types.h>        /* for size_t */
 

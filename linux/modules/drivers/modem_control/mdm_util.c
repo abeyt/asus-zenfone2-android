@@ -124,8 +124,7 @@ void mdm_ctrl_set_mdm_cpu(struct mdm_info *mdm)
 		pdata->mdm.cleanup = mcd_mdm_cleanup;
 		pdata->mdm.get_wflash_delay = mcd_mdm_get_wflash_delay;
 		pdata->mdm.get_cflash_delay = mcd_mdm_get_cflash_delay;
-		pdata->mdm.ap_cdump = mcd_mdm_ap_cdump;
-                pdata->cpu.init = cpu_init_gpio;
+		pdata->cpu.init = cpu_init_gpio;
 		pdata->cpu.cleanup = cpu_cleanup_gpio;
 		pdata->cpu.get_mdm_state = get_gpio_mdm_state;
 		pdata->cpu.get_irq_cdump = get_gpio_irq_cdump;
@@ -133,15 +132,13 @@ void mdm_ctrl_set_mdm_cpu(struct mdm_info *mdm)
 		pdata->cpu.get_gpio_rst = get_gpio_rst;
 		pdata->cpu.get_gpio_pwr = get_gpio_pwr;
 		pdata->cpu.get_gpio_on = get_gpio_on;
-		pdata->cpu.get_gpio_apcdump = get_gpio_apcdump;
-                break;
+		break;
 	case BOARD_NGFF:
 		pdata->mdm.init = mcd_mdm_init;
 		pdata->mdm.power_on = mcd_mdm_cold_boot_ngff;
 		pdata->mdm.warm_reset = mcd_mdm_warm_reset;
 		pdata->mdm.power_off = mcd_mdm_power_off_ngff;
 		pdata->mdm.cleanup = mcd_mdm_cleanup;
-		pdata->mdm.ap_cdump = mcd_mdm_ap_cdump;
 		pdata->mdm.get_wflash_delay = mcd_mdm_get_wflash_delay;
 		pdata->mdm.get_cflash_delay = mcd_mdm_get_cflash_delay;
 		pdata->cpu.init = cpu_init_gpio_ngff;
@@ -152,8 +149,7 @@ void mdm_ctrl_set_mdm_cpu(struct mdm_info *mdm)
 		pdata->cpu.get_gpio_rst = get_gpio_rst;
 		pdata->cpu.get_gpio_pwr = get_gpio_pwr;
 		pdata->cpu.get_gpio_on = get_gpio_on;
-		pdata->cpu.get_gpio_apcdump = get_gpio_apcdump;
-                break;
+		break;
 	default:
 		pr_info(DRVNAME ": Can't retrieve conf specific functions");
 		mdm->is_mdm_ctrl_disabled = true;

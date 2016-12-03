@@ -48,6 +48,20 @@
 #define SMP_CALL_FUNCTION_ARGS 1
 #endif /* VTSS_AUTOCONF_SMP_CALL_FUNCTION_RETRY */
 
+#ifdef VTSS_AUTOCONF_TRACE_SCHED_RQ
+#define VTSS_TP_RQ struct rq* rq,
+#else  /* VTSS_AUTOCONF_TRACE_SCHED_RQ */
+#define VTSS_TP_RQ
+#endif /* VTSS_AUTOCONF_TRACE_SCHED_RQ */
+
+#if defined(VTSS_AUTOCONF_TRACE_SCHED_RQ) || defined(VTSS_AUTOCONF_TRACE_SCHED_NO_RQ)
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,15,0)
+#define VTSS_TRACE_EVENTS_SCHED 1
+#endif
+
+#endif
+
 /* Macro for printk */
 #ifdef VTSS_DEBUG_TRACE
 extern int vtss_check_trace(const char* func_name, int* flag);
@@ -144,9 +158,15 @@ extern cycles_t vtss_profile_clk_unw;
 #define VTSS_PROFILE_PRINT(func, ...)
 #endif /* VTSS_DEBUG_PROFILE */
 
-#if defined(CONFIG_PREEMPT_NOTIFIERS) && !defined(CONFIG_TRACEPOINTS)
+#if defined(CONFIG_PREEMPT_NOTIFIERS) && ((!defined(CONFIG_TRACEPOINTS))||(LINUX_VERSION_CODE >= KERNEL_VERSION(3,15,0)))
 #define VTSS_USE_PREEMPT_NOTIFIERS 1 /* Use backup scheme */
 #endif
 #define VTSS_GET_TASK_STRUCT 1 /* Prevent task struct early destruction */
+
+#ifdef VTSS_AUTOCONF_USER_COPY_WITHOUT_CHECK
+#define vtss_copy_from_user _copy_from_user
+#else
+#define vtss_copy_from_user copy_from_user
+#endif
 
 #endif /* _VTSS_CONFIG_H_ */

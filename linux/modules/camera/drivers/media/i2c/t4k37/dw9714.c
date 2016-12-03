@@ -193,6 +193,7 @@ int dw9714_t_vcm_timing(struct v4l2_subdev *sd, s32 value)
 
 int dw9714_vcm_init(struct v4l2_subdev *sd)
 {
+
 	/* set VCM to home position and vcm mode to direct*/
 	dw9714_dev.vcm_mode = DW9714_LSC;
 	dw9714_dev.vcm_settings.update = true;

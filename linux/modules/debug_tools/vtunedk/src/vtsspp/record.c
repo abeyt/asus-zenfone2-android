@@ -618,11 +618,12 @@ int vtss_record_configs(struct vtss_transport_data* trnd, int m32, int is_safe)
         colrec.minor    = VTSS_VERSION_MINOR;
         colrec.revision = VTSS_VERSION_REVISION;
         colrec.features =
-            VTSS_CFGTRACE_CTX    | VTSS_CFGTRACE_CPUEV   | VTSS_CFGTRACE_SWCFG  |
+            VTSS_CFGTRACE_CPUEV  | VTSS_CFGTRACE_SWCFG  |
             VTSS_CFGTRACE_HWCFG  | VTSS_CFGTRACE_SAMPLE  | VTSS_CFGTRACE_TP     |
-            VTSS_CFGTRACE_MODULE | VTSS_CFGTRACE_PROCTHR | VTSS_CFGTRACE_STACKS |
+            VTSS_CFGTRACE_MODULE | VTSS_CFGTRACE_PROCTHR |
             VTSS_CFGTRACE_BRANCH | VTSS_CFGTRACE_EXECTX  | VTSS_CFGTRACE_TBS    |
             VTSS_CFGTRACE_LASTBR | VTSS_CFGTRACE_TREE    | VTSS_CFGTRACE_SYNCARG;
+        colrec.features |= reqcfg.trace_cfg.trace_flags;
         colrec.len = (unsigned char)sizeof(colname);
         rc |= vtss_transport_record_write(trnd, &colrec, sizeof(colrec), (void*)colname, sizeof(colname), is_safe);
     }

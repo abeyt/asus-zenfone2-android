@@ -34,6 +34,8 @@
 #include <asm/intel_mid_thermal.h>
 #include "asus_battery.h"
 #include "smb_external_include.h"
+#include <linux/proc_fs.h>
+#include <linux/seq_file.h>
 
 #define DRIVER_VERSION					"1.5.7"
 #define TRY								5
@@ -1117,6 +1119,34 @@ int mm8033_read_rm(void)
 		return rm;
 	}
 }
+int mm8033_read_cyclecount(void)
+{
+	int cc = mm8033_read_reg(g_mm8033_chip->client, REG_CYCLE_COUNT);
+
+	if (cc < 0) {
+		GAUGE_ERR("error in reading battery cyclecount = 0x%04x\n", cc);
+	}
+    return cc;
+}
+int mm8033_read_designcapacity(void)
+{
+	int dc = mm8033_read_reg(g_mm8033_chip->client, REG_DESIGN_CAPACITY);
+
+	if (dc < 0) {
+		GAUGE_ERR("error in reading battery designcapacity = 0x%04x\n", dc);
+	}
+    return dc;
+}
+static int mm8033_read_soh(void)
+{
+	int soh = mm8033_read_reg(g_mm8033_chip->client, REG_SOH);
+
+	if (soh < 0) {
+		GAUGE_ERR("error in reading battery soh = 0x%04x\n", soh);
+		return soh;
+	}
+	return soh;
+}
 /* ---for tbl usage---*/
 
 static void batt_state_func(struct work_struct *work)
@@ -1154,6 +1184,47 @@ static void batt_state_func(struct work_struct *work)
 	}
 	schedule_delayed_work(&batt_state_wq, 60*HZ);
 }
+
+/****Add battery status proc file+++*****/
+static struct proc_dir_entry *battery_status_proc_file;
+static int battery_status_proc_read(struct seq_file *buf, void *v)
+{
+	seq_printf(buf, "FCC=%d(mAh),DC=%d(mAh),RM=%d(mAh),TEMP=%d(C),VOLT=%d(mV),CUR=%d(mA),CC=%d,SOH=%d(%)\n",
+		mm8033_read_fcc(),
+		mm8033_read_designcapacity(),
+		mm8033_read_rm(),
+		mm8033_read_temp()/10,
+		mm8033_read_volt(),
+		mm8033_read_current(),
+		mm8033_read_cyclecount(),
+		mm8033_read_soh()
+	);
+	return 0;
+}
+
+static int battery_status_proc_open(struct inode *inode, struct  file *file)
+{
+    return single_open(file, battery_status_proc_read, NULL);
+}
+
+
+static struct file_operations battery_status_proc_ops = {
+	.open = battery_status_proc_open,
+	.read = seq_read,
+	.release = single_release,
+};
+
+static void create_battery_status_proc_file(void)
+{
+    GAUGE_INFO("create_battery_status_proc_file\n");
+    battery_status_proc_file = proc_create("battery_soh", 0444,NULL, &battery_status_proc_ops);
+    if(battery_status_proc_file){
+        GAUGE_INFO("create battery_status_proc_file sucessed!\n");
+    }else{
+		GAUGE_INFO("create battery_status_proc_file failed!\n");
+    }
+}
+/****Add battery status proc file---*****/
 
 static ssize_t batt_switch_name(struct switch_dev *sdev, char *buf)
 {
@@ -1275,6 +1346,7 @@ static int mm8033_probe(struct i2c_client *client, const struct i2c_device_id *i
 	mm8033_tbl.read_temp = mm8033_read_temp;
 	mm8033_tbl.read_fcc = mm8033_read_fcc;
 	mm8033_tbl.read_rm = mm8033_read_rm;
+	mm8033_tbl.read_soh = mm8033_read_soh;
 	ret = asus_register_power_supply(&client->dev, &mm8033_tbl);
 	if (ret)
                 GAUGE_ERR("asus_register_power_supply fail\n");
@@ -1284,6 +1356,9 @@ static int mm8033_probe(struct i2c_client *client, const struct i2c_device_id *i
 #ifdef CONFIG_HAS_EARLYSUSPEND
 	mm8033_config_earlysuspend(chip);
 #endif
+    //print battery status in proc/battery_soh
+	create_battery_status_proc_file();
+
 	GAUGE_INFO("%s --\n", __func__);
 	return 0;
 }
@@ -1326,11 +1401,15 @@ static int __init mm8033_init(void)
 	int ret;
 
 	GAUGE_INFO("%s +++\n", __func__);
-	if(Read_HW_ID()==HW_ID_EVB) {
+	if (Read_HW_ID()==HW_ID_EVB) {
 		GAUGE_INFO("HW version is EVB, so donot init\n");
 		return 0;
-	}else if (Read_PROJ_ID()==PROJ_ID_ZX550ML) {
+	} else if (Read_PROJ_ID()==PROJ_ID_ZX550ML) {
 		GAUGE_INFO("Project version is ZX550ML, so donot init\n");
+		return 0;
+	} else if (!((Read_PROJ_ID()==PROJ_ID_ZE550ML)||(Read_PROJ_ID()==PROJ_ID_ZE551ML)||
+			(Read_PROJ_ID()==PROJ_ID_ZE551ML_CKD)||(Read_PROJ_ID()==PROJ_ID_ZE551ML_ESE))) {
+		GAUGE_INFO("Project version is not ZE55xML, so donot init\n");
 		return 0;
 	}
 

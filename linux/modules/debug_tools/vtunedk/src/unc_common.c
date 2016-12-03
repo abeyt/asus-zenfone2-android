@@ -47,7 +47,7 @@
 #include "inc/pci.h"
 
 extern UNCORE_TOPOLOGY_INFO_NODE uncore_topology;
-extern U64                      *read_unc_ctr_info;
+extern U64                      *read_counter_info;
 
 
 U32                             *unc_package_to_bus_map;
@@ -224,36 +224,27 @@ UNC_COMMON_PCI_Write_PMU (
 
         CHECK_IF_GENUINE_INTEL_DEVICE(value, vendor_id, device_id);
            
-        if (callback                              && 
-            callback->is_Valid_For_Write          && 
+        if (callback                              &&
+            callback->is_Valid_For_Write          &&
             !(callback->is_Valid_For_Write(device_id, ECB_entries_reg_id(pecb,idx)))) {
             continue;
         }
 
-        // otherwise, we found the bus # for our device.
-        // fill in the corresponding bus #
-        ECB_entries_bus_no(pecb,idx) = busno;
-
         if (ctl_val                                  &&
-            callback                                 && 
-            callback->is_Unit_Ctl                    && 
-            (ECB_entries_reg_type(pecb,idx) == CCCR) && 
+            callback                                 &&
+            callback->is_Unit_Ctl                    &&
+            (ECB_entries_reg_type(pecb,idx) == CCCR) &&
              callback->is_Unit_Ctl(ECB_entries_reg_id(pecb,idx))) {
              value = ctl_val;
-             pci_address = FORM_PCI_ADDR(ECB_entries_bus_no(pecb,idx),
+             // busno can not be stored in ECB because different sockets have different bus no.
+             pci_address = FORM_PCI_ADDR(busno,
                                          ECB_entries_dev_no(pecb,idx),
                                          ECB_entries_func_no(pecb,idx),
                                          ECB_entries_reg_id(pecb,idx));
              // reset the counters
              PCI_Write_Ulong(pci_address, value);
-             value= PCI_Read_Ulong(pci_address);
-             SEP_PRINT_DEBUG("UNC_COMMON_PCI_Write_PMU Read reg = 0x%x --- value 0x%x\n",
-                             ECB_entries_reg_id(pecb,idx), value);
-             value     = 0;
-             // program value in
-             PCI_Write_Ulong(pci_address, value);
-             SEP_PRINT_DEBUG("UNC_COMMON_PCI_Write_PMU reg = 0x%x --- value 0x%x\n",
-                             ECB_entries_reg_id(pecb,idx), value);
+             SEP_PRINT_DEBUG("UNC_COMMON_PCI_Write_PMU cpu=%d, reg = 0x%x --- value 0x%x\n",
+                             this_cpu, ECB_entries_reg_id(pecb,idx), value);
              continue;
         } 
 
@@ -264,6 +255,9 @@ UNC_COMMON_PCI_Write_PMU (
                                     ECB_entries_reg_id(pecb,idx));
         PCI_Write_Ulong(pci_address, (U32)ECB_entries_reg_value(pecb,idx));
 
+        SEP_PRINT_DEBUG("UNC_COMMON_PCI_Write_PMU cpu=%d, reg = 0x%x --- value 0x%x\n",
+                             this_cpu, ECB_entries_reg_id(pecb,idx), (U32)ECB_entries_reg_value(pecb,idx));
+
         // we're zeroing out a data register, which is 48 bits long
         // we need to zero out the upper bits as well
         if (ECB_entries_reg_type(pecb,idx) == DATA) {
@@ -272,6 +266,9 @@ UNC_COMMON_PCI_Write_PMU (
                                         ECB_entries_func_no(pecb,idx),
                                         (ECB_entries_reg_id(pecb,idx) + NEXT_ADDR_OFFSET));
             PCI_Write_Ulong(pci_address, (U32)ECB_entries_reg_value(pecb,idx));
+
+            SEP_PRINT_DEBUG("UNC_COMMON_PCI_Write_PMU cpu=%d, reg = 0x%x --- value 0x%x\n",
+                             this_cpu, ECB_entries_reg_id(pecb,idx), (U32)ECB_entries_reg_value(pecb,idx));
         }   
 
             // this is needed for overflow detection of the accumulators.
@@ -303,59 +300,72 @@ UNC_COMMON_PCI_Enable_PMU (
     DEVICE_CALLBACK     callback
 )
 {
-    U32      dev_idx       = *((U32 *)param);
-    U32      value         = 0;
-    U32      pci_address   = 0;
-    U32      this_cpu      = CONTROL_THIS_CPU();
-    CPU_STATE      pcpu    = &pcb[this_cpu];
+    U32            dev_idx       = *((U32 *)param);
+    U32            value         = 0;
+    U32            pci_address   = 0;
+    U32            busno;
+    U32            package_num;
+    U32            this_cpu      = CONTROL_THIS_CPU();
+    CPU_STATE      pcpu          = &pcb[this_cpu];
 
     if (!CPU_STATE_socket_master(pcpu)) {
         return;
     }
+
+    package_num        = core_to_package_map[this_cpu];
+    busno              = unc_package_to_bus_map[package_num];
+
     FOR_EACH_REG_ENTRY_UNC(pecb, dev_idx, i) {
         if (ECB_entries_reg_id(pecb,i) == control_msr) {
             SYS_Write_MSR(ECB_entries_reg_id(pecb,i), ECB_entries_reg_value(pecb,i));
-            SEP_PRINT_DEBUG("UNC_COMMON_PCI_Write_PMU wrote GLOBAL_CONTROL_MSR 0x%x\n", control_msr);
-            continue;
-       }
-       if (callback                               && 
-           callback->is_PMON_Ctl                  &&
-           (ECB_entries_reg_type(pecb,i) == CCCR) && 
-            callback->is_PMON_Ctl(ECB_entries_reg_id(pecb,i))) {
-            value = enable_val | ECB_entries_reg_value(pecb,i);
-            pci_address = FORM_PCI_ADDR(ECB_entries_bus_no(pecb,i),
-                                        ECB_entries_dev_no(pecb,i),
-                                        ECB_entries_func_no(pecb,i),
-                                        ECB_entries_reg_id(pecb,i));
-            PCI_Write_Ulong(pci_address, value);
-            SEP_PRINT_DEBUG("UNC_COMMON_PCI_Enable_PMU Event_reg = 0x%x --- value 0x%I64x\n",
-                         ECB_entries_reg_id(pecb,i), value);
+            SEP_PRINT_DEBUG("UNC_COMMON_PCI_Write_PMU wrote GLOBAL_CONTROL_MSR 0x%x val=0x%x\n",
+                         control_msr, ECB_entries_reg_value(pecb,i));
             continue;
         }
-        if (disable_val                            && 
+        if (callback                               &&
+            callback->is_PMON_Ctl                  &&
+            (ECB_entries_reg_type(pecb,i) == CCCR) &&
+             callback->is_PMON_Ctl(ECB_entries_reg_id(pecb,i))) {
+             value = enable_val | ECB_entries_reg_value(pecb,i);
+             pci_address = FORM_PCI_ADDR(busno,
+                                         ECB_entries_dev_no(pecb,i),
+                                         ECB_entries_func_no(pecb,i),
+                                         ECB_entries_reg_id(pecb,i));
+             PCI_Write_Ulong(pci_address, value);
+             SEP_PRINT_DEBUG("UNC_COMMON_PCI_Enable_PMU Event_reg = 0x%x --- value 0x%x\n",
+                          ECB_entries_reg_id(pecb,i), value);
+             continue;
+        }
+        if (disable_val                            &&
             callback                               &&
             callback->is_Unit_Ctl                  &&
             callback->is_Unit_Ctl(ECB_entries_reg_id(pecb,i))) {
-            pci_address = FORM_PCI_ADDR(ECB_entries_bus_no(pecb,i),
+            pci_address = FORM_PCI_ADDR(busno,
                                         ECB_entries_dev_no(pecb,i),
                                         ECB_entries_func_no(pecb,i),
                                         ECB_entries_reg_id(pecb,i));
             value = PCI_Read_Ulong(pci_address);
             value &= ~(disable_val);
             PCI_Write_Ulong(pci_address, value);
+            SEP_PRINT_DEBUG("UNC_COMMON_PCI_Enable_PMU Event_reg = 0x%x --- value 0x%x\n",
+                         ECB_entries_reg_id(pecb,i), value);
         }
     } END_FOR_EACH_REG_ENTRY_UNC;
+
     return;
 }
 
 /*!
- * @fn         extern VOID UNC_COMMON_PCI_Disable_PMU(PVOID)
+ * @fn           extern VOID UNC_COMMON_PCI_Disable_PMU(PVOID)
  *
- * @brief      Disable the per unit global control to stop the PMU counters.
+ * @brief        Disable the per unit global control to stop the PMU counters.
  *
- * @param      Device Index of this PMU unit
+ * @param        Device Index of this PMU unit
+ * @control_msr  Control MSR address
+ * @enable_val   If counter freeze bit does not work, counter enable bit should be cleared
+ * @disable_val  Disable collection
  *
- * @return     None
+ * @return       None
  *
  * <I>Special Notes:</I>
  */
@@ -363,13 +373,16 @@ extern VOID
 UNC_COMMON_PCI_Disable_PMU (
     PVOID               param,
     U32                 control_msr,
-    U32                 ctl_val,
+    U32                 enable_val,
+    U32                 disable_val,
     DEVICE_CALLBACK callback
 )
 {
     U32 dev_idx                  = *((U32 *)param);
-    U32 value                    = ctl_val;
+    U32 value;
     U32 pci_address;
+    U32 busno;
+    U32 package_num;
     U32 this_cpu                 = CONTROL_THIS_CPU();
     CPU_STATE      pcpu          = &pcb[this_cpu];
 
@@ -377,24 +390,42 @@ UNC_COMMON_PCI_Disable_PMU (
         return;
     }
 
+    package_num        = core_to_package_map[this_cpu];
+    busno              = unc_package_to_bus_map[package_num];
+
     FOR_EACH_REG_ENTRY_UNC(pecb, dev_idx, i) {
         if (control_msr && (ECB_entries_reg_id(pecb,i) == control_msr)) {
             SYS_Write_MSR(ECB_entries_reg_id(pecb,i), 0LL);
             SEP_PRINT_DEBUG("UNC_COMMON_PCI_Disable_PMU wrote GLOBAL_CONTROL_MSR 0x%x\n", control_msr);
             continue;
         }
-        if (callback                                && 
-            callback->is_Unit_Ctl                   &&
-            (ECB_entries_reg_type(pecb,i) == CCCR)  && 
-            callback->is_Unit_Ctl(ECB_entries_reg_id(pecb,i))) {
-            value = ctl_val | (U32)ECB_entries_reg_value(pecb,i);
-            pci_address = FORM_PCI_ADDR(ECB_entries_bus_no(pecb,i),
+
+        if (callback) {
+            // The enable bit must be cleared when the PMU freeze is not working
+            if (enable_val && callback->is_PMON_Ctl    &&
+                (ECB_entries_reg_type(pecb,i) == CCCR) &&
+                callback->is_PMON_Ctl(ECB_entries_reg_id(pecb,i))) {
+                value = (~enable_val) & ECB_entries_reg_value(pecb,i);
+                pci_address = FORM_PCI_ADDR(busno,
                                         ECB_entries_dev_no(pecb,i),
                                         ECB_entries_func_no(pecb,i),
                                         ECB_entries_reg_id(pecb,i));
-            PCI_Write_Ulong(pci_address, value);
-            SEP_PRINT_DEBUG("UNC_COMMON_PCI_Disable_PMU Event_Data_reg = 0x%x --- value 0x%I64x\n",
-                         ECB_entries_reg_id(pecb,i), value);
+                PCI_Write_Ulong(pci_address, value);
+                SEP_PRINT_DEBUG("UNC_COMMON_PCI_Disable_PMU cpu=%d, Event_reg = 0x%x --- value 0x%x\n",
+                         this_cpu, ECB_entries_reg_id(pecb,i), value);
+            }
+            else if (callback->is_Unit_Ctl                   &&
+                     (ECB_entries_reg_type(pecb,i) == CCCR)  &&
+                     callback->is_Unit_Ctl(ECB_entries_reg_id(pecb,i))) {
+                value = disable_val | (U32)ECB_entries_reg_value(pecb,i);
+                pci_address = FORM_PCI_ADDR(busno,
+                                        ECB_entries_dev_no(pecb,i),
+                                        ECB_entries_func_no(pecb,i),
+                                        ECB_entries_reg_id(pecb,i));
+                PCI_Write_Ulong(pci_address, value);
+                SEP_PRINT_DEBUG("UNC_COMMON_PCI_Disable_PMU cpu=%d, Event_Data_reg = 0x%x --- value 0x%x\n",
+                         this_cpu, ECB_entries_reg_id(pecb,i), value);
+            }
         }
     } END_FOR_EACH_REG_ENTRY_UNC;
     return;
@@ -443,8 +474,6 @@ UNC_COMMON_PCI_Read_Counts (
     U32             cur_grp    = LWPMU_DEVICE_cur_group(&devices[id]);
     ECB             pecb       = LWPMU_DEVICE_PMU_register_data(&devices[id])[cur_grp];
     U32             pci_address;
-    U64             value_high          = 0;
-    U64             value_lo_2          = 0;
     U32             this_cpu            = CONTROL_THIS_CPU();
     U32             package_num         = core_to_package_map[this_cpu];
     U32             bus_no              = unc_package_to_bus_map[package_num];
@@ -469,32 +498,11 @@ UNC_COMMON_PCI_Read_Counts (
                                                     ECB_entries_dev_no(pecb,i),
                                                     ECB_entries_func_no(pecb,i),
                                                     (ECB_entries_reg_id(pecb,i) + NEXT_ADDR_OFFSET));
-        value_high                  = (U64)PCI_Read_Ulong(pci_address);
-        // Now we have to check if the lower 32 bits overflowed in between the reads
-        // reread lower 4 bytes
-        pci_address                 = FORM_PCI_ADDR(bus_no,
-                                                    ECB_entries_dev_no(pecb,i),
-                                                    ECB_entries_func_no(pecb,i),
-                                                    ECB_entries_reg_id(pecb,i));
-        value_lo_2                  = LOWER_4_BYTES_MASK & PCI_Read_Ulong(pci_address);
-        if (value_lo_2 < *data) {
-            // overflow occurred
-            // use new lower bits
-            *data = value_lo_2;
-            // reread the top bits as well.
-            pci_address                 = FORM_PCI_ADDR(bus_no,
-                                                        ECB_entries_dev_no(pecb,i),
-                                                        ECB_entries_func_no(pecb,i),
-                                                        (ECB_entries_reg_id(pecb,i) + NEXT_ADDR_OFFSET));
-             value_high                  = (U64)PCI_Read_Ulong(pci_address);
-        }
-        *data |= value_high << NEXT_ADDR_SHIFT;
-
+        *data |= (U64)PCI_Read_Ulong(pci_address) << NEXT_ADDR_SHIFT;
     } END_FOR_EACH_DATA_REG_UNC;
 
     return;
 }
-
 
 /*!
  * @fn       extern   UNC_COMMON_PCI_Read_PMU_Data(param)
@@ -514,11 +522,10 @@ UNC_COMMON_PCI_Read_PMU_Data(
     U32             pci_address;
     U64             value_low           = 0;
     U64             value_high          = 0;
-    U64             value_lo_2          = 0;
     U32             this_cpu            = CONTROL_THIS_CPU();
     U32             package_num         = 0;
     U32             bus_no              = 0;
-    U64            *buffer              = read_unc_ctr_info;
+    U64            *buffer              = read_counter_info;
     DRV_CONFIG      pcfg_unc;
     U64             start_index;
     CPU_STATE       pcpu                = &pcb[this_cpu];
@@ -566,26 +573,8 @@ UNC_COMMON_PCI_Read_PMU_Data(
                                                     ECB_entries_func_no(pecb,i),
                                                     (ECB_entries_reg_id(pecb,i) + NEXT_ADDR_OFFSET));
         value_high                  = (U64)PCI_Read_Ulong(pci_address);
-        // Now we have to check if the lower 32 bits overflowed in between the reads
-        // reread lower 4 bytes
-        pci_address                 = FORM_PCI_ADDR(bus_no,
-                                                    ECB_entries_dev_no(pecb,i),
-                                                    ECB_entries_func_no(pecb,i),
-                                                    ECB_entries_reg_id(pecb,i));
-        value_lo_2                  = LOWER_4_BYTES_MASK & PCI_Read_Ulong(pci_address);
-        if (value_lo_2 < value_low) {
-            // overflow occurred
-            // use new lower bits
-            value_low = value_lo_2;
-            // reread the top bits as well.
-            pci_address                 = FORM_PCI_ADDR(bus_no,
-                                                        ECB_entries_dev_no(pecb,i),
-                                                        ECB_entries_func_no(pecb,i),
-                                                        (ECB_entries_reg_id(pecb,i) + NEXT_ADDR_OFFSET));
-            value_high                  = (U64)PCI_Read_Ulong(pci_address);
-        }
         buffer[j] = (value_high << NEXT_ADDR_SHIFT) | value_low;
-        SEP_PRINT_DEBUG("j = %d value = 0x%x pkg = %d  e_id = %d\n",j, buffer[j],package_num, ECB_entries_emon_event_id_index_local(pecb,i));
+        SEP_PRINT_DEBUG("j = %d value = %llu pkg = %d  e_id = %d\n",j, buffer[j],package_num, ECB_entries_emon_event_id_index_local(pecb,i));
         //Increment sub_evt_index so that the next event position is adjusted
         if ((prev_ei == -1 )|| (prev_ei != cur_ei)) {
              prev_ei = cur_ei;
@@ -598,7 +587,6 @@ UNC_COMMON_PCI_Read_PMU_Data(
 
     return;
 }
-
 
 
 /*!
@@ -949,7 +937,7 @@ UNC_COMMON_MSR_Read_PMU_Data (
     U32             dev_idx             = *((U32*)param);
     U32             this_cpu            = CONTROL_THIS_CPU();
     U32             package_num         = 0;
-    U64            *buffer              = read_unc_ctr_info;
+    U64            *buffer              = read_counter_info;
     DRV_CONFIG      pcfg_unc;
     U64             start_index;
     CPU_STATE       pcpu                = &pcb[this_cpu];

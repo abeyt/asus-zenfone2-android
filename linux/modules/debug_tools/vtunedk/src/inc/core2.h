@@ -42,11 +42,11 @@ extern DISPATCH_NODE  corei7_dispatch_htoff_mode_2;
 #define CORE2UNC_DISABLE_BL_BYPASS_MSR 0x39C
 
 #if defined(DRV_IA32)
-#define LBR_DATA_BITS                  32
+#define CORE2_LBR_DATA_BITS            32
 #else
-#define LBR_DATA_BITS                  48
+#define CORE2_LBR_DATA_BITS            48
 #endif
 
-#define LBR_BITMASK                    ((1ULL << LBR_DATA_BITS) -1)
+#define CORE2_LBR_BITMASK                    ((1ULL << CORE2_LBR_DATA_BITS) -1)
 
 #endif 

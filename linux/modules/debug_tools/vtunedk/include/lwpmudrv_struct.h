@@ -72,7 +72,6 @@ struct DRV_CONFIG_NODE_S {
     DRV_BOOL     enable_gfx;
     DRV_BOOL     enable_pwr;
     DRV_BOOL     emon_mode;
-#if defined(DRV_IA32) || defined(DRV_EM64T)
     U32          pebs_mode;
     U32          pebs_capture;
     DRV_BOOL     collect_lbrs;
@@ -89,20 +88,13 @@ struct DRV_CONFIG_NODE_S {
     U32          emon_unc_offset[MAX_EMON_GROUPS];
     DRV_BOOL     enable_p_state;   // adding MPERF and APERF values at the end of the samples
     DRV_BOOL     enable_cp_mode;   // enabling continuous profiling mode
-#else
-    DRV_BOOL     collect_ro;
-#endif
     S32          seed_name_len;
-#if defined(DRV_IA32) || defined(DRV_EM64T)
-    U32          padding1;
-#endif  
+    DRV_BOOL     read_pstate_msrs;
     U64          target_pid;
     DRV_BOOL     use_pcl;
     DRV_BOOL     enable_ebc;
     DRV_BOOL     enable_tbc;
-#if defined(DRV_IA32) || defined(DRV_EM64T)
     U32          ebc_group_id_offset;
-#endif
     union {
         S8      *seed_name;
         U64      dummy1;
@@ -113,14 +105,10 @@ struct DRV_CONFIG_NODE_S {
     } u2;
     U32          device_type;
     DRV_BOOL     ds_area_available;
-#if defined(DRV_IA32) || defined(DRV_EM64T)
     DRV_BOOL     precise_ip_lbrs;
     DRV_BOOL     store_lbrs;
-#endif
     DRV_BOOL     tsc_capture;
-#if defined(DRV_IA32) || defined(DRV_EM64T)
-    U32          padding2;
-#endif
+    U32          padding;
 };
 
 #define DRV_CONFIG_size(cfg)                      (cfg)->size
@@ -134,7 +122,6 @@ struct DRV_CONFIG_NODE_S {
 #define DRV_CONFIG_enable_gfx(cfg)                (cfg)->enable_gfx
 #define DRV_CONFIG_enable_pwr(cfg)                (cfg)->enable_pwr
 #define DRV_CONFIG_emon_mode(cfg)                 (cfg)->emon_mode
-#if defined(DRV_IA32) || defined(DRV_EM64T)
 #define DRV_CONFIG_pebs_mode(cfg)                 (cfg)->pebs_mode
 #define DRV_CONFIG_pebs_capture(cfg)              (cfg)->pebs_capture
 #define DRV_CONFIG_collect_lbrs(cfg)              (cfg)->collect_lbrs
@@ -151,11 +138,9 @@ struct DRV_CONFIG_NODE_S {
 #define DRV_CONFIG_emon_unc_offset(cfg,grp_num)   (cfg)->emon_unc_offset[grp_num]
 #define DRV_CONFIG_enable_p_state(cfg)            (cfg)->enable_p_state
 #define DRV_CONFIG_enable_cp_mode(cfg)            (cfg)->enable_cp_mode
-#else
-#define DRV_CONFIG_collect_ro(cfg)                (cfg)->collect_ro
-#endif
 #define DRV_CONFIG_seed_name(cfg)                 (cfg)->u1.seed_name
 #define DRV_CONFIG_seed_name_len(cfg)             (cfg)->seed_name_len
+#define DRV_CONFIG_read_pstate_msrs(cfg)          (cfg)->read_pstate_msrs
 #define DRV_CONFIG_cpu_mask(cfg)                  (cfg)->u2.cpu_mask
 #define DRV_CONFIG_target_pid(cfg)                (cfg)->target_pid
 #define DRV_CONFIG_use_pcl(cfg)                   (cfg)->use_pcl
@@ -164,10 +149,8 @@ struct DRV_CONFIG_NODE_S {
 #define DRV_CONFIG_timer_based_counts(cfg)        (cfg)->enable_tbc
 #define DRV_CONFIG_device_type(cfg)               (cfg)->device_type
 #define DRV_CONFIG_ds_area_available(cfg)         (cfg)->ds_area_available
-#if defined(DRV_IA32) || defined(DRV_EM64T)
 #define DRV_CONFIG_precise_ip_lbrs(cfg)           (cfg)->precise_ip_lbrs
 #define DRV_CONFIG_store_lbrs(cfg)                (cfg)->store_lbrs
-#endif
 #define DRV_CONFIG_tsc_capture(cfg)               (cfg)->tsc_capture
 
 /*
@@ -213,7 +196,8 @@ typedef struct CodeDescriptor_s {
  */
 
 typedef struct SampleRecordPC_s {   // Program Counter section
-    U64   descriptor_id;
+    U32   descriptor_id;
+    U32   osid;                 // OS identifier
     union {
         struct {
             U64 iip;            // IA64 interrupt instruction pointer
@@ -256,6 +240,7 @@ typedef struct SampleRecordPC_s {   // Program Counter section
 } SampleRecordPC, *PSampleRecordPC;
 
 #define SAMPLE_RECORD_descriptor_id(x)       (x)->descriptor_id
+#define SAMPLE_RECORD_osid(x)                (x)->osid
 #define SAMPLE_RECORD_iip(x)                 (x)->u1.s1.iip
 #define SAMPLE_RECORD_ipsr(x)                (x)->u1.s1.ipsr
 #define SAMPLE_RECORD_eip(x)                 (x)->u1.s2.eip
@@ -342,7 +327,7 @@ typedef struct ModuleRecord_s {
                            // ..then this is a kernel or global module.  Can validly
                            // ..be 0 if not raw (array index).  Use ReturnPid() to access this
                            // ..field
-   U32   reserved2;
+   U32   osid;             // OS identifier
    U64   unloadTsc;        // TSC collected on an unload event
    U32   path;             // module path name (section offset on disk)
                            // ..when initally written by sampler name is at end of this
@@ -356,14 +341,17 @@ typedef struct ModuleRecord_s {
                            //  (s/b 0 in a raw module record)
                            // in a raw module record, the segment name will follow the
                            //  module name and the module name's terminating NULL char
-   U32   reserved3;
+   U32   page_offset_high;
    U64   tsc;              // time stamp counter module event occurred
    U32   parent_pid;       // Parent PID of the process
-   U32   reserved4;
+   U32   page_offset_low;
 } ModuleRecord;
 
 #define MR_unloadTscSet(x,y)        (x)->unloadTsc = (y)
 #define MR_unloadTscGet(x)          (x)->unloadTsc
+
+#define MR_page_offset_Set(x,y)   (x)->page_offset_low = (y)&0xFFFFFFFF; (x)->page_offset_high=((y)>>32)&0xFFFFFFFF;
+#define MR_page_offset_Get(x)     ((((U64)(x)->page_offset_high)<<32) | (x)->page_offset_low)
 
 // Accessor macros for ModuleRecord
 #define MODULE_RECORD_rec_length(x)                     (x)->recLength
@@ -397,6 +385,7 @@ typedef struct ModuleRecord_s {
 #define MODULE_RECORD_segment_name(x)                   (x)->segmentName
 #define MODULE_RECORD_tsc(x)                            (x)->tsc
 #define MODULE_RECORD_parent_pid(x)                     (x)->parent_pid
+#define MODULE_RECORD_osid(x)                           (x)->osid
 
 /*
  *  The VTSA_SYS_INFO_STRUCT information that is shared across kernel mode
@@ -611,6 +600,7 @@ typedef struct __sys_info {
     U32 reserved1;               // added for future fields
     U32 reserved2;               // alignment purpose
     U64 reserved3[3];            // added for future fields
+
 } VTSA_SYS_INFO;
 
 #define VTSA_SYS_INFO_node_array(sys_info)                (sys_info)->node_array
@@ -663,7 +653,7 @@ struct DRV_DIMM_INFO_NODE_S {
 #define DRV_DIMM_INFO_value(di)       (di)->value
 
 //platform information. need to get from driver
-#define MAX_PACKAGES  4
+#define MAX_PACKAGES  16
 #define MAX_CHANNELS  8
 #define MAX_RANKS     3
 
@@ -693,7 +683,7 @@ struct DRV_PLATFORM_INFO_NODE_S {
 //platform information. need to get from Platform picker
 typedef struct PLATFORM_FREQ_INFO_NODE_S PLATFORM_FREQ_INFO_NODE;
 typedef        PLATFORM_FREQ_INFO_NODE  *PLATFORM_FREQ_INFO;
- 
+
 struct PLATFORM_FREQ_INFO_NODE_S {
     float   multiplier;          // freq multiplier
     double *table;               // freq table
@@ -751,7 +741,6 @@ struct _SOFTWARE_INFO_NODE_S {
  *  Common Register descriptions
  */
 
-#if defined(DRV_IA32) || defined(DRV_EM64T)
 
 /*
  *  Bits used in the debug control register
@@ -807,8 +796,6 @@ struct _SOFTWARE_INFO_NODE_S {
 #define DEBUG_CTL_NODE_enable_uncore_pmi_get(reg)     (reg) &   DEBUG_CTL_ENABLE_UNCORE_PMI
 #define DEBUG_CTL_NODE_enable_uncore_pmi_set(reg)     (reg) |=  DEBUG_CTL_ENABLE_UNCORE_PMI
 #define DEBUG_CTL_NODE_enable_uncore_pmi_clear(reg)   (reg) &= ~DEBUG_CTL_ENABLE_UNCORE_PMI
-
-#endif /* defined(DRV_IA32) || defined(DRV_EM64T) */
 
 /*
  * @macro SEP_VERSION_NODE_S
@@ -912,6 +899,12 @@ typedef enum
     DEVICE_INFO_PWR         =   4,
     DEVICE_INFO_TELEMETRY   =   5
 }   DEVICE_INFO_TYPE;
+
+typedef enum {
+    INVALID_TERMINATE_TYPE = 0,
+    STOP_TERMINATE,
+    CANCEL_TERMINATE
+} ABNORMAL_TERMINATE_TYPE;
 
 #if defined(__cplusplus)
 }
@@ -1033,6 +1026,7 @@ struct PCIDEV_INFO_NODE_S {
 #define PCIDEV_INFO_NODE_func_info(x,i)        (x).func_info[i]
 #define PCIDEV_INFO_NODE_valid(x)              (x).valid
 
+
 typedef struct UNCORE_PCIDEV_NODE_S   UNCORE_PCIDEV_NODE;
 
 struct UNCORE_PCIDEV_NODE_S {
@@ -1040,6 +1034,7 @@ struct UNCORE_PCIDEV_NODE_S {
      U32                dispatch_id;
      U32                scan;
 };
+
 
 typedef struct UNCORE_TOPOLOGY_INFO_NODE_S   UNCORE_TOPOLOGY_INFO_NODE;
 typedef        UNCORE_TOPOLOGY_INFO_NODE     *UNCORE_TOPOLOGY_INFO;
@@ -1059,13 +1054,31 @@ struct UNCORE_TOPOLOGY_INFO_NODE_S {
 #define UNCORE_TOPOLOGY_INFO_pcidev_is_devno_funcno_valid(x, dev_index, devno, funcno)        ((x)->device[dev_index].pcidev[devno].func_info[funcno].valid ? TRUE : FALSE)
 #define UNCORE_TOPOLOGY_INFO_pcidev_is_device_found(x, dev_index, devno, funcno)              ((x)->device[dev_index].pcidev[devno].func_info[funcno].is_found_in_platform ? TRUE : FALSE)
 
+typedef struct DEV_FUNC_PAIRS_NODE_S DEV_FUNC_PAIRS_NODE;
+typedef        DEV_FUNC_PAIRS_NODE  *DEV_FUNC_PAIRS;
 
-#define GET_NUM_UNITS(x, dev_index, d, f, num_units)                                                       \
+struct DEV_FUNC_PAIRS_NODE_S {
+    U32 devno;
+    U32 funcno;
+};
+
+#define DEV_FUNC_PAIRS_devno(x)   (x)->devno
+#define DEV_FUNC_PAIRS_funcno(x)  (x)->funcno
+
+#define INIT_DEV_FUNC_PAIRS(dev_funcs, num_units, i)                    \
+  for (i = 0; i < (num_units); i++) {                                   \
+    DEV_FUNC_PAIRS_devno(&(dev_funcs)[i]) = 0;                          \
+    DEV_FUNC_PAIRS_funcno(&(dev_funcs)[i]) = 0;                         \
+  }
+
+#define GET_NUM_UNITS(x, dev_index, d, f, num_units, valid_dev_funcs)                                      \
     for((d) =0; (d) < MAX_PCI_DEVNO; (d)++) {                                                              \
         if (!(UNCORE_TOPOLOGY_INFO_pcidev_valid((x), (dev_index), (d)))) continue;                         \
         for ( (f)=0; (f) < MAX_PCI_FUNCNO; (f)++) {                                                        \
             if (!(UNCORE_TOPOLOGY_INFO_pcidev_is_devno_funcno_valid((x), (dev_index), (d),(f)))) continue; \
             if (!(UNCORE_TOPOLOGY_INFO_pcidev_is_device_found((x), (dev_index), (d),(f)))) continue;       \
+            DEV_FUNC_PAIRS_devno(&(valid_dev_funcs)[num_units]) = (d);                                     \
+            DEV_FUNC_PAIRS_funcno(&(valid_dev_funcs)[num_units]) = (f);                                    \
             (num_units)++;                                                                                 \
         }                                                                                                  \
     }                                                                                 

@@ -107,7 +107,6 @@ static int mdm_ctrl_cold_boot(struct mdm_info *mdm)
                 serial_hsu_set_lpm(false);
                 xmm2230_disable_spi(false);
         }
-
 	mdm_ctrl_launch_timer(mdm, cflash_delay, MDM_TIMER_FLASH_ENABLE);
 
 	/* If no IPC ready signal between modem and AP */
@@ -175,24 +174,16 @@ static int mdm_ctrl_flashing_warm_reset(struct mdm_info *mdm)
 
 static int mdm_ctrl_ap_req_coredump(struct mdm_info *mdm)
 {
-        int ret = 0;
-        struct mdm_ops *mdm_ops = &mdm->pdata->mdm;
-	struct cpu_ops *cpu = &mdm->pdata->cpu;
-	int rst, wflash_delay;
-
-        if (mdm->pdata->mdm_ver == MODEM_2230)        {
+        if (mdm->pdata->mdm_ver == MODEM_2230) {
                 pr_info(DRVNAME ": AP REQUEST COREDUMP 1 ");
                 mdm_apcdmp_IMC2230_execute();
-        }
-        else{
+        } else {
                 pr_info(DRVNAME ": AP REQUEST COREDUMP 0 ");
                 mdm_apcdmp_IMC726X_execute();
         }
-
         return 0;
-
-
 }
+
 static int mdm_ctrl_power_off(struct mdm_info *mdm)
 {
 	int ret = 0;
@@ -205,7 +196,6 @@ static int mdm_ctrl_power_off(struct mdm_info *mdm)
 
 	/* Set the modem state to OFF */
 	mdm_ctrl_set_state(mdm, MDM_CTRL_STATE_OFF);
-
         if (mdm->pdata->mdm_ver == MODEM_2230)
         {
                 serial_hsu_set_lpm(true);
@@ -224,11 +214,7 @@ static int mdm_ctrl_cold_reset(struct mdm_info *mdm)
 	pr_warn(DRVNAME ": Cold reset requested");
 
 	mdm_ctrl_power_off(mdm);
-        if (mdm->pdata->mdm_ver == MODEM_2230)
-	  usleep_range(1000000,1000000);
-        else
-          usleep_range(30000,30000);
-        mdm_ctrl_cold_boot(mdm);
+	mdm_ctrl_cold_boot(mdm);
 
 	return 0;
 }
@@ -249,12 +235,6 @@ static irqreturn_t mdm_ctrl_coredump_it(int irq, void *data)
 	/* Ignoring event if we are in OFF state. */
 	if (mdm_ctrl_get_state(mdm) == MDM_CTRL_STATE_OFF) {
 		pr_err(DRVNAME ": CORE_DUMP while OFF\n");
-		goto out;
-	}
-
-	/* Ignoring if Modem reset is ongoing. */
-	if (atomic_read(&mdm->rst_ongoing) == 1) {
-		pr_err(DRVNAME ": CORE_DUMP while Modem Reset is ongoing\n");
 		goto out;
 	}
 
@@ -526,7 +506,7 @@ long mdm_ctrl_dev_ioctl(struct file *filep, unsigned int cmd, unsigned long arg)
                 mdm_ctrl_ap_req_coredump(mdm);
                 break;
 
-        case MDM_CTRL_POWER_OFF:
+	case MDM_CTRL_POWER_OFF:
 		/* Unconditional power off */
 		mdm_ctrl_power_off(mdm);
 		break;
@@ -959,6 +939,10 @@ static int mdm_ctrl_module_remove(struct platform_device *pdev)
 		mdm->pdata->mdm.cleanup(mdm->pdata->modem_data);
 		mdm->pdata->cpu.cleanup(mdm->pdata->cpu_data);
 		mdm->pdata->pmic.cleanup(mdm->pdata->pmic_data);
+
+		kfree(mdm->pdata->cpu_data);
+		kfree(mdm->pdata->pmic_data);
+		kfree(mdm->pdata);
 	}
 
 	/* Unregister the device */

@@ -42,6 +42,16 @@ static const struct name2id NAME2ID[] = {
 	{ "dnx",        0x14 },
 	{ "ramconsole", 0x16 },
 	{ "factory2",   0x18 },
+	{ "bootoneshot", 0x1A },
+#if defined(CONFIG_INTEL_REBOOT_TARGET_PSH_DEBUG)
+	{ "psh-debug",  0xF0 },
+#endif
+#if defined(CONFIG_INTEL_REBOOT_TARGET_SCU_DEBUG)
+	{ "scu-debug",  0xF1 },
+#endif
+#if defined(CONFIG_INTEL_REBOOT_TARGET_CHANGE_PORT)
+	{ "debug-crd",  0xF2 },
+#endif
 };
 
 #define ALLOW_FACTORY_PARAM_NAME "allow_factory="

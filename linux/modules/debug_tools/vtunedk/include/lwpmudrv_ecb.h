@@ -368,7 +368,7 @@ struct EVENT_REG_NODE_S {
 // Config bits
 //
 #define EVENT_REG_precise_bit               0x00000001
-#define EVENT_REG_tag_bit                   0x00000002
+#define EVENT_REG_global_bit                0x00000002
 #define EVENT_REG_uncore_bit                0x00000004
 #define EVENT_REG_uncore_q_rst_bit          0x00000008
 #define EVENT_REG_latency_bit               0x00000010
@@ -390,9 +390,9 @@ struct EVENT_REG_NODE_S {
 #define EVENT_REG_precise_set(x,i)          ((x)[(i)].flags |=  EVENT_REG_precise_bit)
 #define EVENT_REG_precise_clear(x,i)        ((x)[(i)].flags &= ~EVENT_REG_precise_bit)
 
-#define EVENT_REG_tag_get(x,i)              ((x)[(i)].flags &   EVENT_REG_tag_bit)
-#define EVENT_REG_tag_set(x,i)              ((x)[(i)].flags |=  EVENT_REG_tag_bit)
-#define EVENT_REG_tag_clear(x,i)            ((x)[(i)].flags &= ~EVENT_REG_tag_bit)
+#define EVENT_REG_global_get(x,i)           ((x)[(i)].flags &   EVENT_REG_global_bit)
+#define EVENT_REG_global_set(x,i)           ((x)[(i)].flags |=  EVENT_REG_global_bit)
+#define EVENT_REG_global_clear(x,i)         ((x)[(i)].flags &= ~EVENT_REG_global_bit)
 
 #define EVENT_REG_uncore_get(x,i)           ((x)[(i)].flags &   EVENT_REG_uncore_bit)
 #define EVENT_REG_uncore_set(x,i)           ((x)[(i)].flags |=  EVENT_REG_uncore_bit)
@@ -629,7 +629,7 @@ struct ECB_NODE_S {
 #define ECB_entries_counter_type(x,i)                EVENT_REG_counter_type((ECB_entries(x)),(i))
 #define ECB_entries_event_scope(x,i)                 EVENT_REG_event_scope((ECB_entries(x)),(i))
 #define ECB_entries_precise_get(x,i)                 EVENT_REG_precise_get((ECB_entries(x)),(i))
-#define ECB_entries_tag_get(x,i)                     EVENT_REG_tag_get((ECB_entries(x)),(i))
+#define ECB_entries_global_get(x,i)                  EVENT_REG_global_get((ECB_entries(x)),(i))
 #define ECB_entries_uncore_get(x,i)                  EVENT_REG_uncore_get((ECB_entries(x)),(i))
 #define ECB_entries_uncore_q_rst_get(x,i)            EVENT_REG_uncore_q_rst_get((ECB_entries(x)),(i))
 #define ECB_entries_is_gp_reg_get(x,i)               EVENT_REG_is_gp_reg_get((ECB_entries(x)),(i))
@@ -643,6 +643,13 @@ struct ECB_NODE_S {
 #define ECB_entries_branch_evt_get(x,i)              EVENT_REG_branch_evt_get((ECB_entries(x)),(i))
 
 // ***************************************************************************
+
+typedef enum {
+    LBR_ENTRY_TOS = 0,
+    LBR_ENTRY_FROM_IP,
+    LBR_ENTRY_TO_IP,
+    LBR_ENTRY_INFO
+} LBR_ENTRY_TYPE;
 
 /*!\struct  LBR_ENTRY_NODE_S
  * \var     etype       TOS = 0; FROM = 1; TO = 2

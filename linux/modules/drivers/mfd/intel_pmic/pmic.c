@@ -28,6 +28,7 @@
 #include <linux/seq_file.h>
 #include "./pmic.h"
 #include <linux/gpio.h>
+#include <linux/slab.h>
 
 #define PMIC_NUM_REG       0xEF
 #define PMIC_READ_STRLEN   4
@@ -159,6 +160,7 @@ err:
 }
 EXPORT_SYMBOL(intel_mid_pmic_update);
 
+#ifndef CONFIG_BTNS_PMIC
 int intel_scu_ipc_read_mip(u8 *data, int len, int offset, int issigned)
 {
 	return 0;
@@ -225,6 +227,7 @@ int intel_scu_ipc_writev(u16 *addr, u8 *data, int len)
 	return 0;
 }
 EXPORT_SYMBOL(intel_scu_ipc_writev);
+#endif
 
 int intel_mid_pmic_set_pdata(const char *name, void *data, int len, int id)
 {
@@ -271,7 +274,7 @@ static int pmic_regmap_write(struct intel_pmic_regmap *map, int val)
 	mutex_lock(&pmic->io_lock);
 	if (cache_offset == map->offset) {
 		if (cache_flags != map->flags) {
-			dev_err(pmic->dev, "Same reg with diff flags\n");
+			dev_dbg(pmic->dev, "Same reg with diff flags\n");
 			__pmic_regmap_flush();
 		}
 	}
@@ -317,7 +320,7 @@ static int pmic_regmap_read(struct intel_pmic_regmap *map)
 	mutex_lock(&pmic->io_lock);
 	if (cache_offset == map->offset) {
 		if (cache_flags != map->flags) {
-			dev_err(pmic->dev, "Same reg with diff flags\n");
+			dev_dbg(pmic->dev, "Same reg with diff flags\n");
 			__pmic_regmap_flush();
 		}
 	}

@@ -167,6 +167,42 @@
 #define CHGRSTATUS_CHGDETB_LATCH_MASK	D1
 #define CHGDETB_MASK			D0
 
+#define CHRLEDCTRL_ADDR			0x53
+#define CHRLEDCTRL_CHRLEDF_MASK		(D5|D4)
+#define CHRLEDCTRL_CHRLEDI_MASK		(D3|D2)
+#define CHRLEDCTRL_SWLEDON_MASK		D1
+#define CHRLEDCTRL_CHRLEDFN_MASK	D0
+
+#define CHRLEDF_QUARTER_HZ		(0 << 4)
+#define CHRLEDF_HALF_HZ			(1 << 4)
+#define CHRLEDF_ONE_HZ			(2 << 4)
+#define CHRLEDF_TWO_HZ			(3 << 4)
+
+#define CHRLEDI_10P0_MA			(0 << 2)
+#define CHRLEDI_1P0_MA			(1 << 2)
+#define CHRLEDI_2P5_MA			(2 << 2)
+#define CHRLEDI_5P0_MA			(3 << 2)
+
+#define SWLEDON_ENABLE			(1 << 1)
+#define CHRLEDFN_SW_CONTROL		(1 << 0)
+
+#define CHRLEDFSM_ADDR			0x54
+#define CHRLEDFSM_LEDFSMDIS_MASK	D3
+#define CHRLEDFSM_LEDEFF_MASK		(D2|D1)
+#define CHRLEDFSM_CHRLEDCIP_MASK	D0
+
+#define LEDFSMDIS_DISABLED		(1 << 3)
+
+#define LEDEFF_OFF				(0 << 1)
+#define LEDEFF_ON				(1 << 1)
+#define LEDEFF_BLINK			(2 << 1)
+#define LEDEFF_BREATHE			(3 << 1)
+
+#define CHRLEDCIP_ENABLE		(1 << 0)
+
+#define CHRLEDPWM_ADDR			0x55
+#define CHRLEDPWM_CHRLEDDUTY_MASK	(D7|D6|D5|D4|D3|D2|D1|D0)
+
 #define THRMBATZONE_ADDR_BC		0xB5
 #define THRMBATZONE_ADDR_SC		0xB6
 #define THRMBATZONE_MASK		(D0|D1|D2)

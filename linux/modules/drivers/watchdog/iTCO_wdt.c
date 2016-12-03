@@ -637,8 +637,8 @@ static irqreturn_t tco_irq_handler(int irq, void *arg)
 	pr_warn("[SHTDWN] %s, WATCHDOG TIMEOUT HANDLER!\n", __func__);
 
 	/* reduce the timeout to the minimum, but sufficient for tracing */
-	iTCO_wdt_set_heartbeat(15);
-	iTCO_wdt_keepalive();
+	bypass_keepalive = false;
+	iTCO_wdt_last_kick(15);
 
 	trigger_all_cpu_backtrace();
 

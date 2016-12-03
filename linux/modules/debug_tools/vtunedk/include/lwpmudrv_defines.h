@@ -23,6 +23,7 @@ extern "C" {
 #undef DRV_OS_SOLARIS
 #undef DRV_OS_MAC
 #undef DRV_OS_ANDROID
+#undef DRV_OS_UNIX
 
 //
 // Make sure none of the architectures is defined here
@@ -39,16 +40,21 @@ extern "C" {
 //
 #if defined(__ANDROID__)
 #define DRV_OS_ANDROID
+#define DRV_OS_UNIX
 #elif defined(__linux__)
 #define DRV_OS_LINUX
+#define DRV_OS_UNIX
 #elif defined(sun)
 #define DRV_OS_SOLARIS
+#define DRV_OS_UNIX
 #elif defined(_WIN32)
 #define DRV_OS_WINDOWS
 #elif defined(__APPLE__)
 #define DRV_OS_MAC
+#define DRV_OS_UNIX
 #elif defined(__FreeBSD__)
 #define DRV_OS_FREEBSD
+#define DRV_OS_UNIX
 #else
 #error "Compiling for an unknown OS"
 #endif
@@ -70,7 +76,7 @@ extern "C" {
 // debug (checked). Once again, don't assume these are the only two values,
 // always have an else clause in case we want to expand this.
 //
-#if defined(DRV_OS_LINUX) || defined(DRV_OS_SOLARIS) || defined(DRV_OS_MAC) || defined(DRV_OS_ANDROID) || defined(DRV_OS_FREEBSD)
+#if defined(DRV_OS_UNIX)
 #define WINAPI
 #endif
 
@@ -91,7 +97,7 @@ extern "C" {
 
 #define DRV_IOCTL_FILE_DESC                 SIOP
 #define DRV_FILE_DESC                       SIOP
-#define DRV_INVALID_FILE_DESC_VALUE   -1
+#define DRV_INVALID_FILE_DESC_VALUE         -1
 
 #elif defined(DRV_OS_FREEBSD)
 
@@ -120,11 +126,33 @@ extern "C" {
 #define IN
 #define INOUT
 
+//
+// VERIFY_SIZEOF let's you insert a compile-time check that the size of a data
+// type (e.g. a struct) is what you think it should be.  Usually it is
+// important to know what the actual size of your struct is, and to make sure
+// it is the same across all platforms.  So this will prevent the code from
+// compiling if something happens that you didn't expect, whether it's because
+// you counted wring, or more often because the compiler inserted padding that
+// you don't want.
+//
+// NOTE: 'elem' and 'size' must both be identifier safe, e.g. matching the
+// regular expression /^[0-9a-zA-Z_]$/.
+//
+// Example:
+//   typedef struct { void *ptr; int data; } mytype;
+//   VERIFY_SIZEOF(mytype, 8);
+//                         ^-- this is correct on 32-bit platforms, but fails
+//                             on 64-bit platforms, indicating a possible
+//                             portability issue.
+//
+#define VERIFY_SIZEOF(type, size) \
+    enum { sizeof_ ## type ## _eq_ ## size = 1 / (int)(sizeof(type) == size) }
+
 #if defined(DRV_OS_WINDOWS)
 #define DRV_DLLIMPORT      __declspec(dllimport)
 #define DRV_DLLEXPORT      __declspec(dllexport)
 #endif
-#if defined(DRV_OS_LINUX) || defined(DRV_OS_SOLARIS) || defined(DRV_OS_MAC) || defined(DRV_OS_ANDROID) || defined(DRV_OS_FREEBSD)
+#if defined(DRV_OS_UNIX)
 #define DRV_DLLIMPORT
 #define DRV_DLLEXPORT
 #endif
@@ -137,8 +165,8 @@ extern "C" {
 #define DRV_PATH_SEPARATOR    "\\"
 #define L_DRV_PATH_SEPARATOR L"\\"
 #endif
-#if defined(DRV_OS_LINUX) || defined(DRV_OS_SOLARIS) || defined(DRV_OS_MAC) || defined(DRV_OS_ANDROID) || defined(DRV_OS_FREEBSD)
 
+#if defined(DRV_OS_UNIX)
 #define FSI64RAW              "ll"
 #define FSS64                 "%"FSI64RAW"d"
 #define FSU64                 "%"FSI64RAW"u"
@@ -147,11 +175,15 @@ extern "C" {
 #define L_DRV_PATH_SEPARATOR L"/"
 #endif
 
-#if defined(DRV_OS_WINDOWS) || defined(DRV_OS_FREEBSD)
+#if defined(DRV_OS_WINDOWS)
 #define DRV_RTLD_NOW    0
 #endif
-#if defined(DRV_OS_LINUX) || defined(DRV_OS_SOLARIS) || defined(DRV_OS_MAC) || defined(DRV_OS_ANDROID)
+#if defined(DRV_OS_UNIX)
+#if defined(DRV_OS_FREEBSD)
+#define DRV_RTLD_NOW 0
+#else
 #define DRV_RTLD_NOW    RTLD_NOW
+#endif
 #endif
 
 #define DRV_STRLEN                       (U32)strlen
@@ -211,7 +243,7 @@ extern "C" {
 #define DRV_WGETENV(buf,buf_size,name)  _wdupenv_s(&(buf),&(buf_size),(name))
 #endif
 
-#if defined(DRV_OS_LINUX) || defined(DRV_OS_SOLARIS) || defined(DRV_OS_MAC) || defined(DRV_OS_ANDROID) || defined(DRV_OS_FREEBSD)
+#if defined(DRV_OS_UNIX)
 /*
    Note: Many of the following macros have a "size" as the second argument.  Generally
          speaking, this is for compatibility with the _s versions available on Windows.
@@ -241,10 +273,10 @@ extern "C" {
 #define DRV_STRTOL                               strtol
 #define DRV_FOPEN(fp,name,mode)                  (fp) = fopen((name),(mode))
 #define DRV_FCLOSE(fp)                           if ((fp) != NULL) { fclose((fp)); }
-#define DRV_WCSCPY(dst,dst_size,src)             wcscpy((dst),(src))
-#define DRV_WCSNCPY(dst,dst_size,src,count)      wcsncpy((dst),(src),(count))
-#define DRV_WCSCAT(dst,dst_size,src)             wcscat((dst),(src))
-#define DRV_WCSTOK(tok,delim,context)            wcstok((tok),(delim))
+#define DRV_WCSCPY(dst,dst_size,src)             wcscpy((dst),(const wchar_t *)(src))
+#define DRV_WCSNCPY(dst,dst_size,src,count)      wcsncpy((dst),(const wchar_t *)(src),(count))
+#define DRV_WCSCAT(dst,dst_size,src)             wcscat((dst),(const wchar_t *)(src))
+#define DRV_WCSTOK(tok,delim,context)            wcstok((tok),(const wchar_t *)(delim),(context))
 #define DRV_STRERROR                             strerror
 #define DRV_SPRINTF(dst,dst_size,args...)        sprintf((dst),##args)
 #define DRV_VSPRINTF(dst,dst_size,length,args...)    vsprintf((dst),(length),##args)
@@ -300,7 +332,7 @@ extern "C" {
 /*
  * OS return types
  */
-#if defined(DRV_OS_LINUX) || defined(DRV_OS_ANDROID) || defined(DRV_OS_FREEBSD) || defined(DRV_OS_SOLARIS) || defined(DRV_OS_MAC)
+#if defined(DRV_OS_UNIX)
 #define OS_STATUS           int
 #define OS_SUCCESS          0
 #define OS_ILLEGAL_IOCTL    -ENOTTY
@@ -335,7 +367,7 @@ extern "C" {
 #define SEP_FREE(loc)   if ((loc)) { free(loc); loc = NULL; }
 
 #define MAX_EVENTS 128       // Limiting maximum multiplexing events although up to 256 events can be supported.
-#if defined(DRV_OS_LINUX) || defined(DRV_OS_SOLARIS) || defined(DRV_OS_MAC) || defined(DRV_OS_ANDROID) || defined(DRV_OS_FREEBSD)
+#if defined(DRV_OS_UNIX)
 #define UNREFERENCED_PARAMETER(p)       ((p) = (p))
 #endif
 

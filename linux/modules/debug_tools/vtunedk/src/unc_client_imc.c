@@ -48,11 +48,11 @@
 #include "inc/pci.h"
 
 extern EVENT_CONFIG   global_ec;
-extern U64           *read_unc_ctr_info;
+extern U64           *read_counter_info;
+extern U64           *prev_counter_data;
 extern LBR            lbr;
 extern DRV_CONFIG     pcfg;
 extern PWR            pwr;
-extern U32            invoking_processor_id;
 PVOID                 virtual_address;
 
 /*!
@@ -73,54 +73,19 @@ snbunc_imc_Write_PMU (
     VOID  *param
 )
 {
-
-    DRV_PCI_DEVICE_ENTRY_NODE  dpden;
-    U32                        pci_address;
-    U32                        bar_lo;
-    U64                        next_bar_offset;
-    U64                        bar_hi;
-    U64                        physical_address;
-    U64                        final_bar;
     U32                        dev_idx   = *((U32*)param);
-    U32                        cur_grp  = LWPMU_DEVICE_cur_group(&devices[(dev_idx)]);
-    ECB                        pecb     = LWPMU_DEVICE_PMU_register_data(&devices[dev_idx])[cur_grp];
     U32                        offset_delta;
-    int                        me      = CONTROL_THIS_CPU();
     DRV_CONFIG                 pcfg_unc = (DRV_CONFIG)LWPMU_DEVICE_pcfg(&devices[dev_idx]);
     U32                        j;
     U32                        event_id   = 0;
     U32                        tmp_value;
+    U32                        this_cpu    = CONTROL_THIS_CPU();
+    CPU_STATE                  pcpu        = &pcb[this_cpu];
 
-    if (me != invoking_processor_id) {
+    if (!CPU_STATE_socket_master(pcpu)) {
         return;
     }
 
-    SEP_PRINT_DEBUG("snbunc_imc_Write_PMU Enter\n");
-    dpden = ECB_pcidev_entry_node(pecb);
-    pci_address = FORM_PCI_ADDR(DRV_PCI_DEVICE_ENTRY_bus_no(&dpden),
-                                DRV_PCI_DEVICE_ENTRY_dev_no(&dpden),
-                                DRV_PCI_DEVICE_ENTRY_func_no(&dpden),
-                                0);
-
-    pci_address = FORM_PCI_ADDR(DRV_PCI_DEVICE_ENTRY_bus_no(&dpden),
-                                DRV_PCI_DEVICE_ENTRY_dev_no(&dpden),
-                                DRV_PCI_DEVICE_ENTRY_func_no(&dpden),
-                                DRV_PCI_DEVICE_ENTRY_bar_offset(&dpden));
-    bar_lo      = PCI_Read_Ulong(pci_address);
-
-    next_bar_offset     = DRV_PCI_DEVICE_ENTRY_bar_offset(&dpden) + NEXT_ADDR_OFFSET;
-    pci_address         = FORM_PCI_ADDR(DRV_PCI_DEVICE_ENTRY_bus_no(&dpden),
-                                DRV_PCI_DEVICE_ENTRY_dev_no(&dpden),
-                                DRV_PCI_DEVICE_ENTRY_func_no(&dpden),
-                                next_bar_offset);
-    bar_hi              = PCI_Read_Ulong(pci_address);
-    final_bar = (bar_hi << SNBUNC_IMC_BAR_ADDR_SHIFT) | bar_lo;
-    final_bar &= SNBUNC_IMC_BAR_ADDR_MASK;
-
-    DRV_PCI_DEVICE_ENTRY_bar_address(&ECB_pcidev_entry_node(pecb)) = final_bar;
-    physical_address     = DRV_PCI_DEVICE_ENTRY_bar_address(&ECB_pcidev_entry_node(pecb))
-                                 + DRV_PCI_DEVICE_ENTRY_base_offset_for_mmio(&ECB_pcidev_entry_node(pecb));
-    virtual_address      = ioremap_nocache(physical_address,4096);
     //Read in the counts into temporary buffer
     FOR_EACH_PCI_DATA_REG(pecb,i,dev_idx,offset_delta) {
         if (DRV_CONFIG_event_based_counts(pcfg_unc)) {
@@ -141,6 +106,64 @@ snbunc_imc_Write_PMU (
     return;
 }
 
+
+/*!
+ * @fn         static VOID snbunc_imc_Enable_PMU(PVOID)
+ *
+ * @brief      Capture the previous values to calculate delta later.
+ *
+ * @param      None
+ *
+ * @return     None
+ *
+ * <I>Special Notes:</I>
+ */
+static void
+snbunc_imc_Enable_PMU (
+    PVOID  param
+)
+{
+    S32            j;
+    U64           *buffer       = prev_counter_data;
+    U32            this_cpu     = CONTROL_THIS_CPU();
+    U32            dev_idx      = *((U32*)param);
+    U32            start_index;
+    DRV_CONFIG     pcfg_unc;
+    CPU_STATE      pcpu         = &pcb[this_cpu];
+    U32            offset_delta;
+    U32            cur_grp      = LWPMU_DEVICE_cur_group(&devices[(dev_idx)]);
+    U32            package_event_count = 0;
+
+    if (!CPU_STATE_socket_master(pcpu)) {
+        return;
+    }
+
+    pcfg_unc = (DRV_CONFIG)LWPMU_DEVICE_pcfg(&devices[dev_idx]);
+
+    // NOTE THAT the enable function currently captures previous values
+    // for EMON collection to avoid unnecessary memory copy.
+    if (!DRV_CONFIG_emon_mode(pcfg_unc)) {
+        return;
+    }
+
+    start_index = DRV_CONFIG_emon_unc_offset(pcfg_unc, cur_grp);
+
+    FOR_EACH_PCI_DATA_REG(pecb,i,dev_idx,offset_delta) {
+        if (ECB_entries_event_scope(pecb,i) == PACKAGE_EVENT) {
+            j = start_index + package_event_count + ECB_entries_group_index(pecb, i) + ECB_entries_emon_event_id_index_local(pecb,i);
+
+            buffer[j] = readl((U32*)((char*)(virtual_address) + offset_delta));
+            SEP_PRINT_DEBUG("snbunc_imc_Enable_PMU cpu=%d, ei=%d, eil=%d, MSR=0x%x, j=0x%d, si=0x%d, value=0x%x\n",
+                this_cpu, ECB_entries_event_id_index(pecb, i), ECB_entries_emon_event_id_index_local(pecb,i),
+                ECB_entries_reg_id(pecb,i),j, start_index,value);
+            package_event_count++;
+        }
+    } END_FOR_EACH_PCI_DATA_REG;
+
+    return;
+}
+
+
 /*!
  * @fn         static VOID snbunc_imc_Disable_PMU(PVOID)
  *
@@ -157,16 +180,13 @@ snbunc_imc_Disable_PMU (
     PVOID  param
 )
 {
-    int me = CONTROL_THIS_CPU();
+    int                        this_cpu    = CONTROL_THIS_CPU();
+    CPU_STATE                  pcpu        = &pcb[this_cpu];
 
-    if (me != invoking_processor_id) {
+    if (!CPU_STATE_socket_master(pcpu)) {
         return;
     }
 
-    SEP_PRINT_DEBUG("snbunc_imc_Disable_PMU : Unmapping the address\n");
-    if (GLOBAL_STATE_current_phase(driver_state) == DRV_STATE_STOPPED) {
-        iounmap((void*)(UIOP)(virtual_address));
-    }
     return;
 }
 
@@ -222,7 +242,8 @@ snbunc_imc_Read_PMU_Data (
 )
 {
     S32            j;
-    U64            *buffer      = read_unc_ctr_info;
+    U64           *buffer       = read_counter_info;
+    U64           *prev_buffer  = prev_counter_data;
     U32            this_cpu     = CONTROL_THIS_CPU();
     U32            dev_idx      = *((U32*)param);
     U32            start_index;
@@ -231,24 +252,115 @@ snbunc_imc_Read_PMU_Data (
     U32            offset_delta;
     U32            cur_grp      = LWPMU_DEVICE_cur_group(&devices[(dev_idx)]);
     U32            package_event_count = 0;
-
-    pcfg_unc                = (DRV_CONFIG)LWPMU_DEVICE_pcfg(&devices[dev_idx]);
-    start_index             =  DRV_CONFIG_emon_unc_offset(pcfg_unc, cur_grp);
+    U64            tmp_value;
 
     if (!CPU_STATE_socket_master(pcpu)) {
         return;
     }
 
+    pcfg_unc = (DRV_CONFIG)LWPMU_DEVICE_pcfg(&devices[dev_idx]);
+    start_index = DRV_CONFIG_emon_unc_offset(pcfg_unc, cur_grp);
+
     FOR_EACH_PCI_DATA_REG(pecb,i,dev_idx,offset_delta) {
         if (ECB_entries_event_scope(pecb,i) == PACKAGE_EVENT) {
-            j         = start_index + package_event_count + ECB_entries_group_index(pecb, i) + ECB_entries_emon_event_id_index_local(pecb,i);
+            j = start_index + package_event_count + ECB_entries_group_index(pecb, i) + ECB_entries_emon_event_id_index_local(pecb,i);
 
-            buffer[j] = readl((U32*)((char*)(virtual_address) + offset_delta));
-            SEP_PRINT_DEBUG("SNB IMC this_cpu %d, ei = %d, eil %d, MSR =0x%x  j=0x%d si = 0x%d  value = 0x%x\n",
-                  this_cpu, ECB_entries_event_id_index(pecb, i), ECB_entries_emon_event_id_index_local(pecb,i), ECB_entries_reg_id(pecb,i),j, start_index,value);
+            tmp_value = readl((U32*)((char*)(virtual_address) + offset_delta));
+            if (ECB_entries_counter_type(pecb,i) == STATIC_COUNTER) {
+                buffer[j] = tmp_value;
+            }
+            else {
+                if (tmp_value >= prev_buffer[j]) {
+                    buffer[j] = tmp_value - prev_buffer[j];
+                }
+                else {
+                    buffer[j] = tmp_value + (ECB_entries_max_bits(pecb,i) - prev_buffer[j]);
+                }
+            }
+
+            SEP_PRINT_DEBUG("snbunc_imc_Read_PMU_Data cpu=%d, ei=%d, eil=%d, MSR=0x%x, j=0x%d, si=0x%d, value=0x%x\n",
+                this_cpu, ECB_entries_event_id_index(pecb, i), ECB_entries_emon_event_id_index_local(pecb,i),
+                ECB_entries_reg_id(pecb,i),j, start_index, value);
             package_event_count++;
         }
     } END_FOR_EACH_PCI_DATA_REG;
+    return;
+}
+
+/* ------------------------------------------------------------------------- */
+/*!
+ * @fn snbunc_imc_Initialize(param)
+ *
+ * @param    param    dummy parameter which is not used
+ *
+ * @return   None     No return needed
+ *
+ * @brief    Do the mapping of the physical address (to do the invalidates in the TLB)
+ *           NOTE: this should never be done with SMP call
+ *
+ */
+static VOID
+snbunc_imc_Initialize (
+     PVOID   param
+)
+{
+    DRV_PCI_DEVICE_ENTRY_NODE  dpden;
+    U32                        pci_address;
+    U32                        bar_lo;
+    U64                        next_bar_offset;
+    U64                        bar_hi;
+    U64                        physical_address;
+    U64                        final_bar;
+
+    U32                        dev_idx   = *((U32*)param);
+    U32                        cur_grp  = LWPMU_DEVICE_cur_group(&devices[(dev_idx)]);
+    ECB                        pecb     = LWPMU_DEVICE_PMU_register_data(&devices[dev_idx])[cur_grp];
+
+    dpden = ECB_pcidev_entry_node(pecb);
+    pci_address = FORM_PCI_ADDR(DRV_PCI_DEVICE_ENTRY_bus_no(&dpden),
+                                DRV_PCI_DEVICE_ENTRY_dev_no(&dpden),
+                                DRV_PCI_DEVICE_ENTRY_func_no(&dpden),
+                                DRV_PCI_DEVICE_ENTRY_bar_offset(&dpden));
+    bar_lo      = PCI_Read_Ulong(pci_address);
+
+    next_bar_offset     = DRV_PCI_DEVICE_ENTRY_bar_offset(&dpden) + NEXT_ADDR_OFFSET;
+    pci_address         = FORM_PCI_ADDR(DRV_PCI_DEVICE_ENTRY_bus_no(&dpden),
+                                DRV_PCI_DEVICE_ENTRY_dev_no(&dpden),
+                                DRV_PCI_DEVICE_ENTRY_func_no(&dpden),
+                                next_bar_offset);
+    bar_hi              = PCI_Read_Ulong(pci_address);
+    final_bar = (bar_hi << SNBUNC_IMC_BAR_ADDR_SHIFT) | bar_lo;
+    final_bar &= SNBUNC_IMC_BAR_ADDR_MASK;
+
+    DRV_PCI_DEVICE_ENTRY_bar_address(&ECB_pcidev_entry_node(pecb)) = final_bar;
+    physical_address     = DRV_PCI_DEVICE_ENTRY_bar_address(&ECB_pcidev_entry_node(pecb))
+                                 + DRV_PCI_DEVICE_ENTRY_base_offset_for_mmio(&ECB_pcidev_entry_node(pecb));
+    virtual_address      = ioremap_nocache(physical_address,4096);
+    
+    return;
+}
+
+/* ------------------------------------------------------------------------- */
+/*!
+ * @fn snbunc_imc_Destroy(param)
+ *
+ * @param    param    dummy parameter which is not used
+ *
+ * @return   None     No return needed
+ *
+ * @brief    Invalidate the entry in TLB of the physical address
+ *           NOTE: this should never be done with SMP call
+ *
+ */
+static VOID
+snbunc_imc_Destroy (
+     PVOID   param
+)
+{
+    SEP_PRINT_DEBUG("snbunc_imc_Disable_PMU : Unmapping the address\n");
+    if (GLOBAL_STATE_current_phase(driver_state) == DRV_STATE_STOPPED) {
+      iounmap((PVOID)(UIOP)virtual_address);
+    }
     return;
 }
 
@@ -257,11 +369,11 @@ snbunc_imc_Read_PMU_Data (
  */
 DISPATCH_NODE  snbunc_imc_dispatch =
 {
-    NULL,                        // initialize
-    NULL,                        // destroy
+    snbunc_imc_Initialize,       // initialize
+    snbunc_imc_Destroy,          // destroy
     snbunc_imc_Write_PMU,        // write
     snbunc_imc_Disable_PMU,      // freeze
-    NULL,                        // restart
+    snbunc_imc_Enable_PMU,       // restart
     snbunc_imc_Read_PMU_Data,    // read
     NULL,                        // check for overflow
     NULL,

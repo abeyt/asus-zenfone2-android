@@ -54,7 +54,7 @@ extern PWR            pwr;
 extern U64           *interrupt_counts;
 
 typedef struct SADDR_S {
-    S64 addr:LBR_DATA_BITS;
+    S64 addr:PERFVER4_LBR_DATA_BITS;
 } SADDR;
 
 #define SADDR_addr(x)                  (x).addr
@@ -645,10 +645,11 @@ perfver4_Read_LBRs (
         SEP_PRINT_DEBUG("perfver4_Read_LBRs %u, 0x%llx\n", i, value);
         if (i == 0) {
             tos_ptr = value;
-        } else {
-            if (LBR_entries_etype(lbr, i) == 1) { // LBR from register
+        }
+        else {
+            if (LBR_entries_etype(lbr, i) == LBR_ENTRY_FROM_IP) { // LBR from register
                 if (tos_ptr == count) {
-                    SADDR_addr(saddr) = value & LBR_BITMASK;
+                    SADDR_addr(saddr) = value & PERFVER4_LBR_BITMASK;
                     tos_ip_addr = (U64) SADDR_addr(saddr); // Add signed extension
                     SEP_PRINT_DEBUG("tos_ip_addr %llu, 0x%llx\n", tos_ptr, value);
                 }

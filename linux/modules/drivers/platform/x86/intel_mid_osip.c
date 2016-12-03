@@ -341,7 +341,7 @@ static int osip_reboot_target_call(const char *target, int id)
 
 	pr_info("%s: notified [%s] target\n", __func__, target);
 
-	pr_warn("[REBOOT] %s, rebooting into %s\n", __func__, target);
+	pr_warn("[REBOOT] %s, rebooting into %s id:0x%02X\n", __func__, target, id);
 #ifdef DEBUG
 	if (id == SIGNED_RECOVERY_ATTR)
 		intel_scu_ipc_read_osnib_rr(&rbt_reason);
@@ -351,16 +351,16 @@ static int osip_reboot_target_call(const char *target, int id)
 	if (ret_ipc < 0)
 		pr_err("%s cannot write %s reboot reason in OSNIB\n",
 			__func__, target);
-	if (id == SIGNED_MOS_ATTR || id == SIGNED_POS_ATTR) {
+	if (id == SIGNED_RECOVERY_ATTR && ret_ipc >= 0) {
+		pr_warn("[REBOOT] %s, invalidating osip\n", __func__);
+		access_osip_record(osip_invalidate, (void *)(get_osii_index(SIGNED_MOS_ATTR)));
+	} else {
 		/* If device is already in RECOVERY we must be able */
 		/* to reboot in MOS if given target is MOS or POS.  */
 		pr_warn("[REBOOT] %s, restoring OSIP\n", __func__);
 		access_osip_record(osip_restore, (void *)(get_osii_index(SIGNED_MOS_ATTR)));
 	}
-	if (id == SIGNED_RECOVERY_ATTR && ret_ipc >= 0) {
-		pr_warn("[REBOOT] %s, invalidating osip\n", __func__);
-		access_osip_record(osip_invalidate, (void *)(get_osii_index(SIGNED_MOS_ATTR)));
-	}
+
 	return NOTIFY_DONE;
 }
 

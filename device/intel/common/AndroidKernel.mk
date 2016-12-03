@@ -17,6 +17,7 @@ make_kernel_tarball: get_kernel_from_source bootimage
 KERNEL_SOC_medfield := mfld
 KERNEL_SOC_clovertrail := ctp
 KERNEL_SOC_merrifield := mrfl
+KERNEL_SOC_brightonshores := btns
 KERNEL_SOC_baytrail := byt
 KERNEL_SOC_cherrytrail := cht
 KERNEL_SOC_moorefield := moor
@@ -54,11 +55,13 @@ KERNEL_CCSLOP := $(subst $(space),$(comma),$(KERNEL_CCSLOP))
 
 KERNEL_OUT_DIR := $(PRODUCT_OUT)/linux/kernel
 KERNEL_OUT_DIR_KDUMP := $(PRODUCT_OUT)/linux/kdump
+KERNEL_OUT_DIR_DEBUG := $(PRODUCT_OUT)/linux/debug
 KERNEL_MODINSTALL := modules_install
 KERNEL_OUT_MODINSTALL := $(PRODUCT_OUT)/linux/$(KERNEL_MODINSTALL)
 KERNEL_MODULES_ROOT := $(PRODUCT_OUT)/root/lib/modules
 KERNEL_CONFIG := $(KERNEL_OUT_DIR)/.config
 KERNEL_CONFIG_KDUMP := $(KERNEL_OUT_DIR_KDUMP)/.config
+KERNEL_CONFIG_DEBUG := $(KERNEL_OUT_DIR_DEBUG)/.config
 KERNEL_BLD_FLAGS := \
     ARCH=$(KERNEL_ARCH) \
     INSTALL_MOD_PATH=../$(KERNEL_MODINSTALL) \
@@ -73,37 +76,68 @@ KERNEL_BLD_FLAGS_KDUMP := $(KERNEL_BLD_FLAGS) \
 KERNEL_BLD_FLAGS :=$(KERNEL_BLD_FLAGS) \
      O=../../$(KERNEL_OUT_DIR) \
 
+KERNEL_BLD_FLAGS_DEBUG :=$(KERNEL_BLD_FLAGS) \
+     O=../../$(KERNEL_OUT_DIR_DEBUG) \
+
 KERNEL_BLD_ENV := CROSS_COMPILE=$(KERNEL_CROSS_COMP) \
     PATH=$(KERNEL_PATH):$(PATH) \
     CCACHE_SLOPPINESS=$(KERNEL_CCSLOP)
 KERNEL_FAKE_DEPMOD := $(KERNEL_OUT_DIR)/fakedepmod/lib/modules
 
 KERNEL_DEFCONFIG := $(KERNEL_SRC_DIR)/arch/x86/configs/$(KERNEL_ARCH)_$(KERNEL_SOC)_defconfig
-KERNEL_DIFFCONFIG ?= $(TARGET_DEVICE_DIR)/$(TARGET_DEVICE)_diffconfig
 KERNEL_VERSION_FILE := $(KERNEL_OUT_DIR)/include/config/kernel.release
 KERNEL_VERSION_FILE_KDUMP := $(KERNEL_OUT_DIR_KDUMP)/include/config/kernel.release
 KERNEL_BZIMAGE := $(PRODUCT_OUT)/kernel
 
-#+++++++++++++++++++++lynn 2014/11/04 FAC++++++++++++++++++++++
+
+# Add debug configuration for userdebug and eng
+ifneq ($(TARGET_BUILD_VARIANT),user)
+  KERNEL_DIFFCONFIG += $(dir $(KERNEL_DEFCONFIG))/$(KERNEL_ARCH)_$(KERNEL_SOC)-debug.diffconfig
+endif
+
+ifeq ($(ENABLE_KGDB),true)
+KERNEL_DIFFCONFIG_KGDB += $(COMMON_PATH)/kgdb_diffconfig
+endif
+
+KERNEL_CONFIG_DEPS := $(strip $(KERNEL_DEFCONFIG) $(KERNEL_DIFFCONFIG) $(KERNEL_EXTRA_DIFFCONFIG) $(KERNEL_DIFFCONFIG_KGDB))
+KERNEL_CONFIG_MK := $(KERNEL_OUT_DIR)/config.mk
+-include $(KERNEL_CONFIG_MK)
+
+ifneq ($(KERNEL_CONFIG_DEPS),$(KERNEL_CONFIG_PREV_DEPS))
+.PHONY: $(KERNEL_CONFIG)
+endif
+
+
 ifeq ($(FACTORY),1)
 KERNEL_DIFFCONFIG_FAC ?= device/asus/common/AsusFactory/diffconfig_Fac
-$(KERNEL_CONFIG): $(KERNEL_DEFCONFIG) $(wildcard $(KERNEL_DIFFCONFIG)) $(wildcard $(KERNEL_DIFFCONFIG_FAC))
+$(KERNEL_CONFIG): $(KERNEL_CONFIG_DEPS) $(wildcard $(KERNEL_DIFFCONFIG_FAC))
+	@echo [jevian log]build factory image...
 	@echo Regenerating kernel config $(KERNEL_OUT_DIR)
 	@mkdir -p $(KERNEL_OUT_DIR)
+	@echo "KERNEL_CONFIG_PREV_DEPS := $^" > $(KERNEL_CONFIG_MK)
 	@cat $^ > $@
-	@! $(KERNEL_BLD_ENV) $(MAKE) -C $(KERNEL_SRC_DIR) $(KERNEL_BLD_FLAGS) listnewconfig | grep -q CONFIG_ || \
+	@! $(KERNEL_BLD_ENV) $(MAKE) -C $(KERNEL_SRC_DIR) $(KERNEL_BLD_FLAGS) listnewconfig | grep -q CONFIG_ ||  \
 		(echo "There are errors in defconfig $^, please run cd $(KERNEL_SRC_DIR) && ./scripts/updatedefconfigs.sh" ; exit 1)
 else
-$(KERNEL_CONFIG): $(KERNEL_DEFCONFIG) $(wildcard $(KERNEL_DIFFCONFIG))
+KERNEL_DIFFCONFIG_Bsp ?= device/asus/common/AsusFactory/diffconfig_Bsp
+$(KERNEL_CONFIG): $(KERNEL_CONFIG_DEPS) $(wildcard $(KERNEL_DIFFCONFIG_Bsp))
 	@echo Regenerating kernel config $(KERNEL_OUT_DIR)
 	@mkdir -p $(KERNEL_OUT_DIR)
+	@echo "KERNEL_CONFIG_PREV_DEPS := $^" > $(KERNEL_CONFIG_MK)
 	@cat $^ > $@
 	@! $(KERNEL_BLD_ENV) $(MAKE) -C $(KERNEL_SRC_DIR) $(KERNEL_BLD_FLAGS) listnewconfig | grep -q CONFIG_ ||  \
 		(echo "There are errors in defconfig $^, please run cd $(KERNEL_SRC_DIR) && ./scripts/updatedefconfigs.sh" ; exit 1)
 endif
-#---------------------lynn 2014/11/04 FAC----------------------
 
-$(KERNEL_CONFIG_KDUMP): $(KERNEL_DEFCONFIG) $(wildcard $(COMMON_PATH)/kdump_defconfig)
+$(KERNEL_CONFIG_DEBUG): $(strip $(KERNEL_DEFCONFIG) $(KERNEL_DIFFCONFIG))
+	@echo Regenerating kernel debug config $(KERNEL_OUT_DIR_DEBUG)
+	@mkdir -p $(KERNEL_OUT_DIR_DEBUG)
+	@echo Using $^
+	@cat $^ > $@
+	@! $(KERNEL_BLD_ENV) $(MAKE) -C $(KERNEL_SRC_DIR) $(KERNEL_BLD_FLAGS_DEBUG) listnewconfig | grep -q CONFIG_ ||  \
+		(echo "There are errors in defconfig $^, please run cd $(KERNEL_SRC_DIR) && ./scripts/updatedefconfigs.sh" ; exit 1)
+
+$(KERNEL_CONFIG_KDUMP): $(KERNEL_CONFIG_DEPS) $(wildcard $(COMMON_PATH)/kdump_defconfig)
 	@echo Regenerating kdump kernel config $(KERNEL_OUT_DIR_KDUMP)
 	@mkdir -p $(KERNEL_OUT_DIR_KDUMP)
 	@cat $^ > $@
@@ -123,6 +157,7 @@ build_bzImage_kdump: $(KERNEL_CONFIG_KDUMP) openssl $(MINIGZIP)
 	@cp -f $(KERNEL_OUT_DIR_KDUMP)/arch/x86/boot/bzImage $(PRODUCT_OUT)/kdumpbzImage
 
 modules_install: $(KERNEL_BZIMAGE)
+	@rm -rf $(KERNEL_OUT_MODINSTALL)
 	@mkdir -p $(KERNEL_OUT_MODINSTALL)
 	@$(KERNEL_BLD_ENV) $(MAKE) -C $(KERNEL_SRC_DIR) $(KERNEL_BLD_FLAGS) modules_install
 
@@ -146,15 +181,15 @@ get_kernel_from_source: copy_modules_to_root
 #ramdisk depends on kernel modules
 $(PRODUCT_OUT)/ramdisk.img: copy_modules_to_root
 
-menuconfig xconfig gconfig: $(KERNEL_CONFIG)
-	@$(KERNEL_BLD_ENV) $(MAKE) -C $(KERNEL_SRC_DIR) $(KERNEL_BLD_FLAGS) $@
+menuconfig xconfig gconfig: $(KERNEL_CONFIG_DEBUG)
+	@$(KERNEL_BLD_ENV) $(MAKE) -C $(KERNEL_SRC_DIR) $(KERNEL_BLD_FLAGS_DEBUG) $@
 ifeq ($(wildcard $(KERNEL_DIFFCONFIG)),)
-	@cp -f $(KERNEL_CONFIG) $(KERNEL_DEFCONFIG)
+	@cp -f $(KERNEL_CONFIG_DEBUG) $(KERNEL_DEFCONFIG)
 	@echo ===========
 	@echo $(KERNEL_DEFCONFIG) has been modified !
 	@echo ===========
 else
-	@./$(KERNEL_SRC_DIR)/scripts/diffconfig -m $(KERNEL_DEFCONFIG) $(KERNEL_CONFIG) > $(KERNEL_DIFFCONFIG)
+	@./$(KERNEL_SRC_DIR)/scripts/diffconfig -m $(KERNEL_DEFCONFIG) $(KERNEL_CONFIG_DEBUG) > $(KERNEL_DIFFCONFIG)
 	@echo ===========
 	@echo $(KERNEL_DIFFCONFIG) has been modified !
 	@echo ===========
@@ -178,7 +213,7 @@ TAGS tags gtags cscope: $(KERNEL_CONFIG)
 define build_kernel_module
 .PHONY: $(2)
 
-$(2): $(KERNEL_BZIMAGE)
+$(2): modules_install
 	@echo Building kernel module $(2) in $(1)
 	@mkdir -p $(KERNEL_OUT_DIR)/../../$(1)
 	@+$(KERNEL_BLD_ENV) $(MAKE) -C $(KERNEL_SRC_DIR) $(KERNEL_BLD_FLAGS) M=../../$(1) $(3)

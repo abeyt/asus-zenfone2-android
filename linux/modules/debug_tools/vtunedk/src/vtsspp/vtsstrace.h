@@ -249,6 +249,7 @@
 
 #define UECSYSTRACE_STREAM_ZLIB 50          /// a record containing a stream compressed with ZLIB
 #define UECSYSTRACE_DEBUG       60          /// a record with debugging info in a human-readable format
+#define UECSYSTRACE_IPT         35          /// a record with a raw IPT data stream
 
 /// module types for for systrace(module map)
 #define MODTYPE_ELF      0x00   /// default Linux module type

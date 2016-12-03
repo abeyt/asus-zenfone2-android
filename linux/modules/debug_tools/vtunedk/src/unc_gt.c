@@ -44,7 +44,6 @@
 #include "ecb_iterators.h"
 #include "inc/pci.h"
 
-extern U32     invoking_processor_id;
 static PVOID   snbunc_gt_virtual_address = NULL;
 static U32     snbunc_gt_rc6_reg1;
 static U32     snbunc_gt_rc6_reg2;
@@ -79,10 +78,11 @@ snbunc_gt_Write_PMU (
     U64                        bar_lo;
     U32                        offset_delta;
     U32                        tmp_value;
-    U32                        me = CONTROL_THIS_CPU();
+    U32                        this_cpu = CONTROL_THIS_CPU();
     U32                        value;
+    CPU_STATE                  pcpu     = &pcb[this_cpu];
 
-    if (me != invoking_processor_id) {
+    if (!CPU_STATE_system_master(pcpu)) {
         return;
     }
 
@@ -280,11 +280,14 @@ snbunc_gt_Enable_PMU (
 {
     U32          dev_idx     = *((U32*)param);
     ECB          pecb        = LWPMU_DEVICE_PMU_register_data(&devices[dev_idx])[0];
-    U32          me          = CONTROL_THIS_CPU();
+    U32          this_cpu    = CONTROL_THIS_CPU();
+    CPU_STATE    pcpu        = &pcb[this_cpu];
 
-    if (me == invoking_processor_id) {
-        snbunc_gt_Disable_RC6_Clock_Gating();
+    if (!CPU_STATE_system_master(pcpu)) {
+        return;
     }
+
+    snbunc_gt_Disable_RC6_Clock_Gating();
 
     if (GLOBAL_STATE_current_phase(driver_state) == DRV_STATE_RUNNING) {
         SYS_Write_MSR(PERF_GLOBAL_CTRL, ECB_entries_reg_value(pecb,0));
@@ -312,9 +315,10 @@ snbunc_gt_Disable_PMU (
     PVOID  param
 )
 {
-    U32 me = CONTROL_THIS_CPU();
+    U32          this_cpu    = CONTROL_THIS_CPU();
+    CPU_STATE    pcpu        = &pcb[this_cpu];
 
-    if (me != invoking_processor_id) {
+    if (!CPU_STATE_system_master(pcpu)) {
         return;
     }
     snbunc_gt_Restore_RC6_Clock_Gating();

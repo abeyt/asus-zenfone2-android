@@ -51,6 +51,7 @@
 #include "emmc_ipanic.h"
 
 #include <linux/kmsg_dump.h>
+#include <asm/intel-mid.h>
 
 static char *part_label = "";
 module_param(part_label, charp, 0);
@@ -452,6 +453,8 @@ static void emmc_panic_notify_add(void)
 	if (!ctx->ipanic_proc_entry[PROC_HEADER_INDEX])
 		pr_err("%s: failed creating proc file\n", __func__);
 	else {
+		proc_set_size(ctx->ipanic_proc_entry[PROC_HEADER_INDEX],
+			      ctx->hdr.log_size);
 		proc_entry_created = 1;
 		pr_info("%s: proc entry created: %s\n", __func__,
 			ctx->ipanic_proc_entry_name[PROC_HEADER_INDEX]);
@@ -511,6 +514,8 @@ static void emmc_panic_notify_add(void)
 			pr_err("%s: failed creating proc file\n",
 				__func__);
 		else {
+			proc_set_size(ctx->ipanic_proc_entry[idx_proc],
+				      ctx->curr.log_length[idx_log]);
 			proc_entry_created = 1;
 			pr_info("%s: proc entry created: %s\n",
 				__func__,
@@ -847,6 +852,8 @@ static void emmc_ipanic_write_pageheader(struct mmc_emergency_info *emmc)
 	wc = emmc_ipanic_writeflashpage(emmc, emmc->start_block, ctx->bounce);
 	if (wc <= 0) {
 		pr_emerg("emmc_ipanic: Info write failed (%d)\n", wc);
+		/* let the watchdog expire to reset the platform */
+		set_reboot_force(REBOOT_FORCE_ON);
 		return;
 	}
 }
@@ -911,6 +918,11 @@ static int emmc_ipanic(struct notifier_block *this, unsigned long event,
 
 	pr_emerg("panic notified\n");
 
+	if (in_panic)
+		/* if panic while executing this panic handler we trig */
+		/* a watchdog event to be sure to report an issue      */
+		set_reboot_force(REBOOT_FORCE_ON);
+
 	if (in_panic || disable_emmc_ipanic)
 		return NOTIFY_DONE;
 
@@ -923,13 +935,13 @@ static int emmc_ipanic(struct notifier_block *this, unsigned long event,
 	touch_nmi_watchdog();
 
 	if (!ctx)
-		goto out;
+		goto emmc_error;
 	emmc = ctx->emmc;
 	if (!emmc)
-		goto out;
+		goto emmc_error;
 	if (ctx->hdr.magic) {
 		pr_emerg("Crash partition in use!\n");
-		goto out;
+		goto emmc_error;
 	}
 
 	rc = emmc->init();
@@ -939,7 +951,7 @@ static int emmc_ipanic(struct notifier_block *this, unsigned long event,
 			"Emmc emergency driver is",
 			"not initialized successfully!",
 			rc);
-		goto out;
+		goto emmc_error;
 	}
 
 	/* Prepare kmsg dumper */
@@ -981,6 +993,12 @@ static int emmc_ipanic(struct notifier_block *this, unsigned long event,
 	pr_info("Panic log data written done!\n");
 
 	ipanic_dumper.active = 0;
+
+	goto out;
+
+emmc_error:
+	/* let the watchdog expire to reset the platform */
+	set_reboot_force(REBOOT_FORCE_ON);
 
 out:
 #ifdef CONFIG_PREEMPT
@@ -1128,9 +1146,10 @@ static int __init emmc_ipanic_init(void)
 	memset(&drv_ctx, 0, sizeof(drv_ctx));
 	drv_ctx.emmc = &emmc_info;
 
-	if (*part_label)
-		strcpy(emmc_info.part_label, part_label);
-
+	if (*part_label) {
+		strncpy(emmc_info.part_label, part_label, (PARTITION_META_INFO_VOLNAMELTH-1));
+		emmc_info.part_label[PARTITION_META_INFO_VOLNAMELTH-1] = '\0';
+	}
 	drv_ctx.ipanic_proc_entry_name = ipanic_proc_entry_name;
 	drv_ctx.bounce = (void *)__get_free_page(GFP_KERNEL);
 

@@ -91,6 +91,7 @@ linuxos_Load_Image_Notify_Routine (
     char           *name,
     PVOID           base,
     U32             size,
+    U64             page_offset,
     U32             pid,
     U32             parent_pid,
     U32             options,
@@ -103,11 +104,14 @@ linuxos_Load_Image_Notify_Routine (
     char           buf[sizeof(ModuleRecord) + MAXNAMELEN + 32];
     U64            tsc_read;
     S32            local_load_event = (load_event==-1) ? 0 : load_event;
+    U64            page_offset_shift;
 
     mra = (ModuleRecord *) buf;
     memset(mra, '\0', sizeof(buf));
     raw_path = (char*) mra + sizeof(ModuleRecord);
 
+    page_offset_shift                              = page_offset << PAGE_SHIFT;
+    MR_page_offset_Set(mra, page_offset_shift);
     MODULE_RECORD_processed(mra)                   = 0;
     MODULE_RECORD_segment_type(mra)                = mode;
     MODULE_RECORD_load_addr64(mra)                 = (U64)(size_t)base;
@@ -215,6 +219,8 @@ linuxos_VMA_For_Process (
     S8  *pname = NULL;
     U32  ppid  = 0;
     U16  exec_mode; 
+    U64 page_offset = 0;
+
 #if defined(DRV_ANDROID)
     char andr_app[MAXNAMELEN +1];
 #endif
@@ -225,9 +231,13 @@ linuxos_VMA_For_Process (
     }
 
     if (vma->vm_file) pname = D_PATH(vma->vm_file, name, MAXNAMELEN);
+
+    page_offset = vma->vm_pgoff;
+
     if (!IS_ERR(pname) && pname != NULL) {
-        SEP_PRINT_DEBUG("enum: %s, %d, %lx, %lx \n",
-                        pname, p->pid, vma->vm_start, (vma->vm_end - vma->vm_start));
+    SEP_PRINT_DEBUG("enum: %s, %d, %lx, %lx %llu\n",
+                         pname, p->pid, vma->vm_start, (vma->vm_end - vma->vm_start), page_offset);
+
         // if the VM_EXECUTABLE flag is set then this is the module
         // that is being used to name the module
         if (DRV_VM_MOD_EXECUTABLE(vma)) {
@@ -274,6 +284,7 @@ linuxos_VMA_For_Process (
         linuxos_Load_Image_Notify_Routine(pname,
                                           (PVOID)vma->vm_start,
                                           (vma->vm_end - vma->vm_start),
+                                          page_offset,
                                           p->pid,
                                           ppid,
                                           options,
@@ -443,14 +454,15 @@ LINUXOS_Enum_Process_Modules (
          */
           
         if (p == NULL) { 
-            SEP_PRINT_DEBUG("Enum_Process_Modules skipped p=NULL\n");
-            continue;
+		SEP_PRINT_DEBUG("Enum_Process_Modules skipped p=NULL\n");
+		return OS_SUCCESS;
         }
         if (p->mm == NULL) {
             SEP_PRINT_DEBUG("Enum_Process_Modules skipped p=0x%p (pid=%d), p->mm=NULL, p->comm=%s\n", p, p->pid, p->comm);
             if (p->comm) {
                 linuxos_Load_Image_Notify_Routine(p->comm,
                                                   NULL,
+                                                  0,
                                                   0,
                                                   p->pid,
                                                   (p->parent) ? p->parent->tgid : 0,

@@ -55,7 +55,7 @@ ifneq ($(KERNELRELEASE),)
 obj-m := $(DRIVER_NAME).o
 $(DRIVER_NAME)-objs := module.o collector.o procfs.o transport.o record.o \
                        task_map.o globals.o cpuevents.o user_vm.o stack.o \
-                       apic.o dsa.o bts.o pebs.o lbr.o nmiwd.o
+                       apic.o dsa.o bts.o pebs.o lbr.o nmiwd.o ipt.o
 ifeq ($(MARCH),i386)
 EXTRA_CFLAGS += -DVTSS_ARCH_32
 $(DRIVER_NAME)-objs += sys32.o

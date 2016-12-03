@@ -550,7 +550,11 @@ static int vtss_user_vm_validate(struct user_vm_accessor* this, unsigned long ip
     kaddr += (CONFIG_PHYSICAL_START + (CONFIG_PHYSICAL_ALIGN - 1)) & ~(CONFIG_PHYSICAL_ALIGN - 1);
 
 #ifdef CONFIG_X86_64
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,16,0)
     if ((ip >= VSYSCALL_START) && (ip < VSYSCALL_END))
+#else
+    if ((ip & PAGE_MASK) == VSYSCALL_ADDR)
+#endif
         return 1; /* [vsyscall] */
     else
 #endif

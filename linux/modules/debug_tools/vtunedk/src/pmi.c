@@ -208,9 +208,11 @@ PMI_Interrupt_Handler (
                     dispatch->read_counts((S8 *)psamp, DRV_EVENT_MASK_event_idx(&event_mask.eventmasks[i]));
                 }
 #if (defined(DRV_IA32) || defined(DRV_EM64T))
-                if (DRV_CONFIG_enable_p_state(pcfg)) {
-                    SEPDRV_P_STATE_Read((S8 *)(psamp)+EVENT_DESC_p_state_offset(evt_desc), pcpu);
-                    if (!DRV_CONFIG_event_based_counts(pcfg) && CPU_STATE_p_state_counting(pcpu)) {
+        if (DRV_CONFIG_enable_p_state(pcfg)) {
+            if (DRV_CONFIG_read_pstate_msrs(pcfg)) {
+                SEPDRV_P_STATE_Read((S8 *)(psamp)+EVENT_DESC_p_state_offset(evt_desc), pcpu);
+            }
+            if (!DRV_CONFIG_event_based_counts(pcfg) && CPU_STATE_p_state_counting(pcpu)) {
                         dispatch->read_counts((S8 *)psamp, DRV_EVENT_MASK_event_idx(&event_mask.eventmasks[i]));
                     }
                 }

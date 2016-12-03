@@ -1,5 +1,4 @@
 obj-y                           += gpio/
-obj-$(CONFIG_GPS) 	        += gps/
 obj-y 		                += hsi/
 obj-$(CONFIG_HWMON)             += hwmon/
 obj-y				+= i2c/
@@ -19,3 +18,4 @@ obj-y               		+= mfd/
 obj-$(CONFIG_WATCHDOG)		+= watchdog/
 obj-$(CONFIG_ACPI)		+= acpi/
 obj-$(CONFIG_PWM)		+= pwm/
+obj-$(CONFIG_GPS) 	        += gps/

@@ -64,12 +64,14 @@ static U32            bl_bypass_data_saved   = 0;
 #endif
 
 typedef struct SADDR_S {
-    S64 addr:LBR_DATA_BITS;
+    S64 addr:CORE2_LBR_DATA_BITS;
 } SADDR;
 
 #define SADDR_addr(x)                  (x).addr
 #define MSR_ENERGY_MULTIPLIER           0x606        // Energy Multiplier MSR
 
+
+#if !defined(DRV_ANDROID)
 /* ------------------------------------------------------------------------- */
 /*!
  * @fn void core2_Disable_Direct2core(ECB)
@@ -82,7 +84,6 @@ typedef struct SADDR_S {
  *
  * <I>Special Notes</I>
  */
-#if !defined(DRV_ANDROID)
 static VOID
 core2_Disable_Direct2core (
     ECB pecb
@@ -207,7 +208,6 @@ core2_Disable_Direct2core (
         }
     }
 }
-#endif
 
 /* ------------------------------------------------------------------------- */
 /*!
@@ -221,7 +221,6 @@ core2_Disable_Direct2core (
  *
  * <I>Special Notes</I>
  */
-#if !defined(DRV_ANDROID)
 static VOID
 core2_Disable_BL_Bypass (
     ECB pecb
@@ -984,10 +983,11 @@ core2_Read_LBRs (
         SEP_PRINT_DEBUG("core2_Read_LBRs %u, 0x%llx\n", i, value);
         if (i == 0) {
             tos_ptr = value;
-        } else {
-            if (LBR_entries_etype(lbr, i) == 1) { // LBR from register
+        }
+        else {
+            if (LBR_entries_etype(lbr, i) == LBR_ENTRY_FROM_IP) { // LBR from register
                 if (tos_ptr == count) {
-                    SADDR_addr(saddr) = value & LBR_BITMASK;
+                    SADDR_addr(saddr) = value & CORE2_LBR_BITMASK;
                     tos_ip_addr = (U64) SADDR_addr(saddr); // Add signed extension 
                     SEP_PRINT_DEBUG("tos_ip_addr %llu, 0x%llx\n", tos_ptr, value);
                 }
@@ -1035,10 +1035,11 @@ corei7_Read_LBRs (
         SEP_PRINT_DEBUG("corei7_Read_LBRs %u, 0x%llx\n", i, value);
         if (i == 0) {
             tos_ptr = value;
-        } else {
-            if (LBR_entries_etype(lbr, i) == 1) { // LBR from register
+        }
+        else {
+            if (LBR_entries_etype(lbr, i) == LBR_ENTRY_FROM_IP) { // LBR from register
                 if (tos_ptr == count) {
-                    SADDR_addr(saddr) = value & LBR_BITMASK;
+                    SADDR_addr(saddr) = value & CORE2_LBR_BITMASK;
                     tos_ip_addr = (U64) SADDR_addr(saddr); // Add signed extension 
                     SEP_PRINT_DEBUG("tos_ip_addr %llu, 0x%llx\n", tos_ptr, value);
                 }

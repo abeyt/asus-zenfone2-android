@@ -46,7 +46,6 @@
 #include "pebs.h"
 #include "unc_common.h"
 
-extern U64           *read_unc_ctr_info;
 
 static VOID inline
 unc_ncu_Enable_PMU(

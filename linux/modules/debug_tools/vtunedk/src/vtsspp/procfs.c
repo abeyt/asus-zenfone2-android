@@ -52,11 +52,6 @@
 #define VTSS_PROCFS_TIMESRC_NAME   ".time_source"
 #define VTSS_PROCFS_TIMELIMIT_NAME ".time_limit"
 
-#ifdef VTSS_AUTOCONF_USER_COPY_WITHOUT_CHECK
-#define vtss_copy_from_user _copy_from_user
-#else
-#define vtss_copy_from_user copy_from_user
-#endif
 
 #ifndef VTSS_AUTOCONF_CPUMASK_PARSELIST_USER
 #include "cpumask_parselist_user.c"
@@ -114,6 +109,7 @@ static ssize_t vtss_procfs_ctrl_write(struct file *file, const char __user * buf
 
         buf += sizeof(char);
         buf_size -= sizeof(char);
+        TRACE("chr=%c", chr);
         switch (chr) {
         case 'V': { /* VXXXXX.XXXXX client version */
                 int major = 1;
@@ -189,7 +185,6 @@ static ssize_t vtss_procfs_ctrl_write(struct file *file, const char __user * buf
             break;
         case 'E': { /* E<size>=... - configuration request */
                 unsigned long size = 0;
-
                 while (buf_size > 0) {
                     if (get_user(chr, buf))
                         return -EFAULT;
@@ -200,16 +195,17 @@ static ssize_t vtss_procfs_ctrl_write(struct file *file, const char __user * buf
                     } else
                         break;
                 }
+                vtss_collection_cfg_init();
+                TRACE("chr2=%c, size = %d", chr, (int)size);
                 if (chr == '=' && size <= buf_size) {
                     int i, j, mux_cnt;
                     int namespace_size = 0;
-
-                    memset(&reqcfg, 0, sizeof(process_cfg_t));
                     TRACE("BEGIN: size=%lu, buf_size=%zu", size, buf_size);
                     while (size != 0) {
                         int cfgreq, fake_shift = 0;
-                        trace_cfg_t* trace_currreq;
-                        cpuevent_cfg_v1_t* cpuevent_currreq;
+                        trace_cfg_t trace_currreq;
+                        stk_cfg_t stk_req;
+                        cpuevent_cfg_v1_t* cpuevent_currreq = NULL;
 
                         if (flags) {
                             /* TODO: For compatibility with old implementation !!! */
@@ -223,15 +219,20 @@ static ssize_t vtss_procfs_ctrl_write(struct file *file, const char __user * buf
                                 return -EFAULT;
                             }
                         }
-
+                        TRACE("cfgreq = %lx", (unsigned long)cfgreq);
                         switch (cfgreq) {
                         case VTSS_CFGREQ_VOID:
                             TRACE("VTSS_CFGREQ_VOID");
                             size = 0;
                             break;
                         case VTSS_CFGREQ_CPUEVENT_V1:
-                            cpuevent_currreq = (cpuevent_cfg_v1_t*)buf;
-                            if (reqcfg.cpuevent_count_v1 < VTSS_CFG_CHAIN_SIZE) {
+                            INFO("in reading VTSS_CFGREQ_CPUEVENT_V1, reqcfg.cpuevent_count_v1=%d", (int)reqcfg.cpuevent_count_v1);
+                            if (reqcfg.cpuevent_count_v1 < VTSS_CFG_CHAIN_SIZE){
+                                if (vtss_copy_from_user(&reqcfg.cpuevent_cfg_v1[reqcfg.cpuevent_count_v1], buf, sizeof(cpuevent_cfg_v1_t))) {
+                                    ERROR("Error in copy_from_user()");
+                                    return -EFAULT;
+                                }
+                                cpuevent_currreq = &reqcfg.cpuevent_cfg_v1[reqcfg.cpuevent_count_v1];
                                 if (namespace_size + cpuevent_currreq->name_len + cpuevent_currreq->desc_len < VTSS_CFG_SPACE_SIZE * 16) {
                                     /// copy CPU event name
                                     if (vtss_copy_from_user(&reqcfg.cpuevent_namespace_v1[namespace_size], &buf[cpuevent_currreq->name_off+fake_shift], cpuevent_currreq->name_len)) {
@@ -253,16 +254,16 @@ static ssize_t vtss_procfs_ctrl_write(struct file *file, const char __user * buf
                                     /// adjust namespace size
                                     namespace_size += cpuevent_currreq->desc_len;
                                     /// copy CPU event record
-                                    if (vtss_copy_from_user(&reqcfg.cpuevent_cfg_v1[reqcfg.cpuevent_count_v1], buf, sizeof(cpuevent_cfg_v1_t))) {
-                                        ERROR("Error in copy_from_user()");
-                                        return -EFAULT;
-                                    }
                                     /* TODO: For compatibility with old implementation !!! */
                                     reqcfg.cpuevent_cfg_v1[reqcfg.cpuevent_count_v1].reqtype = VTSS_CFGREQ_CPUEVENT_V1;
                                     /// adjust record size (as it may differ from initial request size)
                                     reqcfg.cpuevent_cfg_v1[reqcfg.cpuevent_count_v1].reqsize = sizeof(cpuevent_cfg_v1_t) + cpuevent_currreq->name_len + cpuevent_currreq->desc_len;
                                     reqcfg.cpuevent_count_v1++;
                                 }
+                            }
+                            if (!cpuevent_currreq){
+                               ERROR("Error in copy_from_user()");
+                               return -EFAULT;
                             }
                             buf += cpuevent_currreq->reqsize+fake_shift;
                             buf_size -= cpuevent_currreq->reqsize+fake_shift;
@@ -303,17 +304,42 @@ static ssize_t vtss_procfs_ctrl_write(struct file *file, const char __user * buf
                             size -= sizeof(lbr_cfg_t);
                             break;
                         case VTSS_CFGREQ_TRACE:
-                            trace_currreq = (trace_cfg_t*)buf;
-                            if (trace_currreq->namelen < VTSS_CFG_SPACE_SIZE) {
-                                if (vtss_copy_from_user(&reqcfg.trace_cfg, buf, sizeof(trace_cfg_t)+trace_currreq->namelen)) {
+                            if (vtss_copy_from_user(&trace_currreq, buf, sizeof(trace_cfg_t))) {
+                                ERROR("Error in copy_from_user()");
+                                return -EFAULT;
+                            }
+                            if (trace_currreq.namelen < VTSS_CFG_SPACE_SIZE) {
+                                if (vtss_copy_from_user(&reqcfg.trace_cfg, buf, sizeof(trace_cfg_t)+trace_currreq.namelen)) {
                                     ERROR("Error in copy_from_user()");
                                     return -EFAULT;
                                 }
                             }
                             TRACE("VTSS_CFGREQ_TRACE: trace_flags=0x%0X, namelen=%d", reqcfg.trace_cfg.trace_flags, trace_currreq->namelen);
-                            buf += sizeof(trace_cfg_t)+trace_currreq->namelen;
-                            buf_size -= sizeof(trace_cfg_t)+trace_currreq->namelen;
-                            size -= sizeof(trace_cfg_t)+trace_currreq->namelen;
+                            buf += sizeof(trace_cfg_t)+(trace_currreq.namelen-1);
+                            buf_size -= sizeof(trace_cfg_t)+(trace_currreq.namelen-1);
+                            size -= sizeof(trace_cfg_t)+(trace_currreq.namelen-1);
+                            break;
+                        case VTSS_CFGREQ_STK:
+                            if (vtss_copy_from_user(&stk_req, buf, sizeof(stk_cfg_t))) {
+                                ERROR("Error in copy_from_user()");
+                                return -EFAULT;
+                            }
+                            if (stk_req.stktype >= vtss_stk_last){
+                                ERROR("The stack settings is not supported in current driver version. Please update the driver.");
+                                break;
+                            }
+                            reqcfg.stk_pg_sz[stk_req.stktype] = (unsigned long)stk_req.stk_pg_sz;
+                            if (reqcfg.stk_pg_sz[stk_req.stktype] == 0) reqcfg.stk_pg_sz[stk_req.stktype] = PAGE_SIZE;
+
+                            reqcfg.stk_sz[stk_req.stktype]=(unsigned long)(reqcfg.stk_sz[stk_req.stktype]);
+                            if (reqcfg.stk_sz[stk_req.stktype] == 0) reqcfg.stk_sz[stk_req.stktype]=(unsigned long)-1;
+                            while (reqcfg.stk_pg_sz[stk_req.stktype] > reqcfg.stk_sz[stk_req.stktype]){
+                                 reqcfg.stk_pg_sz[stk_req.stktype] = (reqcfg.stk_pg_sz[stk_req.stktype] >> 1);
+                            }
+                            TRACE("VTSS_CFGREQ_STK: stk_sz=0x%lx", reqcfg.stk_pg_sz[stk_req.stktype]);
+                            buf += sizeof(stk_cfg_t);
+                            buf_size -= sizeof(stk_cfg_t);
+                            size -= sizeof(stk_cfg_t);
                             break;
                         default:
                             ERROR("Incorrect config request 0x%X", cfgreq);
@@ -321,9 +347,27 @@ static ssize_t vtss_procfs_ctrl_write(struct file *file, const char __user * buf
                         }
                         TRACE("LOOP: size=%lu, buf_size=%zu", size, buf_size);
                     } /* while (size != 0) */
-                    if (reqcfg.cpuevent_count_v1 == 0)
-                        vtss_cpuevents_reqcfg_default(0, vtss_procfs_defsav());
+                    if ((reqcfg.cpuevent_count_v1 == 0 && !(reqcfg.trace_cfg.trace_flags & (VTSS_CFGTRACE_CTX|VTSS_CFGTRACE_PWRACT|VTSS_CFGTRACE_PWRIDLE)))||
+                        (reqcfg.cpuevent_count_v1 == 0 && hardcfg.family == 0x0b))
+                            vtss_cpuevents_reqcfg_default(0, vtss_procfs_defsav());
                     vtss_sysevents_reqcfg_append();
+                    if(hardcfg.family != 0x06 || (hardcfg.model != 0x3d /* BDW */ && hardcfg.model != 0x4e /* SKL */)){
+                        reqcfg.trace_cfg.trace_flags &= ~VTSS_CFGTRACE_IPT;
+                    } else {
+                        /// silently replace BTS with IPT on BDW
+                        if(reqcfg.trace_cfg.trace_flags & VTSS_CFGTRACE_BRANCH)
+                        {
+                            if(hardcfg.family == 0x06 && (hardcfg.model == 0x3d /* BDW */ || hardcfg.model == 0x4e /* SKL */))
+                            {
+                                reqcfg.trace_cfg.trace_flags |= VTSS_CFGTRACE_IPT;  /// TODO: uncomment when the user-mode part is ready
+                            }
+                        }
+                        /// mutually exclude LBRs and IPT
+                        if(reqcfg.trace_cfg.trace_flags & VTSS_CFGTRACE_IPT)
+                        {
+                            reqcfg.trace_cfg.trace_flags &= ~(VTSS_CFGTRACE_BRANCH | VTSS_CFGTRACE_LASTBR | VTSS_CFGTRACE_LBRCSTK);
+                        }
+                    }
                 } else {
                     ERROR("Invalid command: E%lu=...", size);
                     return -EINVAL;
@@ -928,8 +972,10 @@ static void vtss_procfs_rmdir(void)
     if (vtss_procfs_root != NULL) {
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3,10,0)
         if (atomic_read(&vtss_procfs_root->count) == 1) {
-#endif
             remove_proc_entry(THIS_MODULE->name, NULL);
+#else
+        remove_proc_subtree(THIS_MODULE->name, NULL);
+#endif
             vtss_procfs_root = NULL;
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3,10,0)
         } else {
@@ -956,7 +1002,7 @@ static int vtss_procfs_mkdir(void)
 #else
         if (kern_path(vtss_procfs_path(), 0, &path) == 0) {
             /* if exist, remove it */
-            remove_proc_entry(THIS_MODULE->name, NULL);
+            remove_proc_subtree(THIS_MODULE->name, NULL);
          }
         /* doesn't exist, so create it */
         vtss_procfs_root = proc_mkdir(THIS_MODULE->name, NULL);

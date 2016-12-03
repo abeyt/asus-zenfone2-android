@@ -40,6 +40,7 @@
 #include <linux/kprobes.h>
 #include <linux/module.h>
 #include <linux/moduleparam.h>
+#include <asm/uaccess.h>
 
 #define VTSS_MODULE_AUTHOR "Dmitry.Eremin@intel.com"
 #define VTSS_MODULE_NAME   "vtss++ kernel module (" VTSS_TO_STR(VTSS_VERSION_STRING) ")"
@@ -80,7 +81,7 @@ int vtss_check_trace(const char* func_name, int* flag)
 
 #define VTSS_SYMBOL_PROC_FORK     "do_fork"
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0)
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0))
 #define VTSS_SYMBOL_PROC_EXEC     "do_execve"
 #else
 // from the version 3.9 do_execve is inlined into sys_execve, and probe is broken because of this.
@@ -91,6 +92,7 @@ int vtss_check_trace(const char* func_name, int* flag)
 #define VTSS_SYMBOL_PROC_EXEC     "do_execve"
 #else
 #define VTSS_SYMBOL_PROC_EXEC     "sys_execve"
+#define VTSS_EXEC_PROBE_USER 1
 #endif
 #endif
 
@@ -105,7 +107,7 @@ int vtss_check_trace(const char* func_name, int* flag)
 #define VTSS_SYMBOL_SYSCALL_ENTER "syscall_trace_enter"
 #define VTSS_SYMBOL_SYSCALL_LEAVE "syscall_trace_leave"
 #endif
-#if defined(CONFIG_TRACEPOINTS) && defined(VTSS_AUTOCONF_TRACE_EVENTS_SCHED)
+#if defined(CONFIG_TRACEPOINTS) && defined(VTSS_TRACE_EVENTS_SCHED)
 #include <trace/events/sched.h>
 #ifdef DECLARE_TRACE_NOARGS
 #define VTSS_TP_DATA   , NULL
@@ -114,14 +116,14 @@ int vtss_check_trace(const char* func_name, int* flag)
 #define VTSS_TP_DATA
 #define VTSS_TP_PROTO
 #endif /* DECLARE_TRACE_NOARGS */
-#endif /* CONFIG_TRACEPOINTS && VTSS_AUTOCONF_TRACE_EVENTS_SCHED */
+#endif /* CONFIG_TRACEPOINTS && VTSS_TRACE_EVENTS_SCHED */
 #ifdef VTSS_AUTOCONF_TRACE_SCHED_RQ
 #define VTSS_TP_RQ struct rq* rq,
 #else  /* VTSS_AUTOCONF_TRACE_SCHED_RQ */
 #define VTSS_TP_RQ
 #endif /* VTSS_AUTOCONF_TRACE_SCHED_RQ */
 
-#if defined(CONFIG_TRACEPOINTS) && defined(VTSS_AUTOCONF_TRACE_EVENTS_SCHED)
+#if defined(CONFIG_TRACEPOINTS) && defined(VTSS_TRACE_EVENTS_SCHED)
 static void tp_sched_switch(VTSS_TP_PROTO VTSS_TP_RQ struct task_struct *prev, struct task_struct *next)
 {
    void* prev_bp = NULL;
@@ -153,7 +155,7 @@ static void jp_sched_switch(VTSS_TP_RQ struct task_struct *prev, struct task_str
     jprobe_return();
 }
 
-#if defined(CONFIG_TRACEPOINTS) && defined(VTSS_AUTOCONF_TRACE_EVENTS_SCHED)
+#if defined(CONFIG_TRACEPOINTS) && defined(VTSS_TRACE_EVENTS_SCHED)
 static void tp_sched_process_fork(VTSS_TP_PROTO struct task_struct *task, struct task_struct *child)
 {
     vtss_target_fork(task, child);
@@ -259,6 +261,55 @@ static int rp_sched_process_exec_compat_enter(struct kretprobe_instance *ri, str
     return 0;
 }
 
+#if 0
+void vtss_show_regs(struct pt_regs *regs)
+{
+    unsigned long cr0 = 0L, cr2 = 0L, cr3 = 0L, cr4 = 0L, fs, gs, shadowgs;
+    unsigned long d0, d1, d2, d3, d6, d7;
+    unsigned int fsindex, gsindex;
+    unsigned int ds, cs, es;
+
+    printk(KERN_DEFAULT "RIP: %04lx:[<%016lx>] ", regs->cs & 0xffff, regs->ip);
+    printk("ip = %lx\n", regs->ip);
+    printk(KERN_DEFAULT "RSP: %04lx:%016lx  EFLAGS: %08lx\n", regs->ss,
+                         regs->sp, regs->flags);
+    printk(KERN_DEFAULT "RAX: %016lx RBX: %016lx RCX: %016lx\n",
+        regs->ax, regs->bx, regs->cx);
+    printk(KERN_DEFAULT "RDX: %016lx RSI: %016lx RDI: %016lx\n",
+        regs->dx, regs->si, regs->di);
+    printk(KERN_DEFAULT "RBP: %016lx R08: %016lx R09: %016lx\n",
+        regs->bp, regs->r8, regs->r9);
+    printk(KERN_DEFAULT "R10: %016lx R11: %016lx R12: %016lx\n",
+        regs->r10, regs->r11, regs->r12);
+    printk(KERN_DEFAULT "R13: %016lx R14: %016lx R15: %016lx\n",
+        regs->r13, regs->r14, regs->r15);
+     asm("movl %%ds,%0" : "=r" (ds));
+     asm("movl %%cs,%0" : "=r" (cs));
+     asm("movl %%es,%0" : "=r" (es));
+     asm("movl %%fs,%0" : "=r" (fsindex));
+     asm("movl %%gs,%0" : "=r" (gsindex));
+     rdmsrl(MSR_FS_BASE, fs);
+     rdmsrl(MSR_GS_BASE, gs);
+     rdmsrl(MSR_KERNEL_GS_BASE, shadowgs);
+     cr0 = read_cr0();
+     cr2 = read_cr2();
+     cr3 = read_cr3();
+     cr4 = read_cr4();
+     printk(KERN_DEFAULT "FS:  %016lx(%04x) GS:%016lx(%04x) knlGS:%016lx\n",
+           fs, fsindex, gs, gsindex, shadowgs);
+     printk(KERN_DEFAULT "CS:  %04x DS: %04x ES: %04x CR0: %016lx\n", cs, ds,
+                     es, cr0);
+     printk(KERN_DEFAULT "CR2: %016lx CR3: %016lx CR4: %016lx\n", cr2, cr3,
+                     cr4);
+     get_debugreg(d0, 0);
+     get_debugreg(d1, 1);
+     get_debugreg(d2, 2);
+     get_debugreg(d3, 3);
+     get_debugreg(d6, 6);
+     get_debugreg(d7, 7);
+}
+#endif
+
 static int rp_sched_process_exec_enter(struct kretprobe_instance *ri, struct pt_regs *regs)
 {
     int i;
@@ -276,15 +327,48 @@ static int rp_sched_process_exec_enter(struct kretprobe_instance *ri, struct pt_
     envp     = (char**)REG(dx, regs);
 #endif
     if (filename != NULL) {
-        char *p = strrchr(filename, '/');
+        char* p = filename;
+#ifdef VTSS_EXEC_PROBE_USER
+        i = 0;
+        while((i < VTSS_FILENAME_SIZE - 1) && (vtss_copy_from_user(&data->filename[i], p, 1)==0)) {
+            if (data->filename[i] == '/' ) i = 0;
+            else if (data->filename[i] == '\0' ) break;
+            else i++;
+            p++;
+        }
+        size = i;
+#else
+        p = strrchr(filename, '/');
         p = p ? p+1 : filename;
         TRACE("filename: '%s' => '%s'", filename, p);
         size = min((size_t)VTSS_FILENAME_SIZE-1, (size_t)strlen(p));
         memcpy(data->filename, p, size);
+#endif
     }
     data->filename[size] = '\0';
     size = 0;
-
+#ifdef VTSS_EXEC_PROBE_USER
+    {
+        char *envp_k;
+        const char* intel_profile_me = "INTEL_VTSS_PROFILE_ME=";
+        while((vtss_copy_from_user(&envp_k, envp, (sizeof(char*)))==0) && envp_k != NULL) {
+            i = 0;
+            while((i < 22 ) && (vtss_copy_from_user(&data->config[i], envp_k, 1)==0)) {
+                if (data->config[i] != intel_profile_me[i] ) break;
+                else i++;
+                envp_k++;
+            }
+            if (i != 22) break;
+            i = 0;
+            while((i < VTSS_FILENAME_SIZE - 1) && (vtss_copy_from_user(&data->config[i], envp_k, 1)==0)) {
+                if (data->config[i] == '\0' ) break;
+                else i++;
+                envp_k++;
+            }
+            envp++;
+        }
+    }
+#else
     for (i = 0; envp[i] != NULL; i++) {
         TRACE("env[%d]: '%s'\n", i, envp[i]);
         if (!strncmp(envp[i], "INTEL_VTSS_PROFILE_ME=", 22 /*==strlen("INTEL_VTSS_PROFILE_ME=")*/)) {
@@ -294,6 +378,7 @@ static int rp_sched_process_exec_enter(struct kretprobe_instance *ri, struct pt_
             break;
         }
     }
+#endif
     data->config[size] = '\0';
     TRACE("ri=0x%p, data=0x%p, filename='%s', config='%s'", ri, data, data->filename, data->config);
     vtss_target_exec_enter(ri->task, data->filename, data->config);
@@ -309,7 +394,7 @@ static int rp_sched_process_exec_leave(struct kretprobe_instance *ri, struct pt_
     return 0;
 }
 
-#if defined(CONFIG_TRACEPOINTS) && defined(VTSS_AUTOCONF_TRACE_EVENTS_SCHED)
+#if defined(CONFIG_TRACEPOINTS) && defined(VTSS_TRACE_EVENTS_SCHED)
 static void tp_sched_process_exit(VTSS_TP_PROTO struct task_struct *task)
 {
     vtss_target_exit(task);
@@ -607,12 +692,15 @@ DEFINE_KP_STUB(syscall_enter,      VTSS_SYMBOL_SYSCALL_ENTER)
 DEFINE_KP_STUB(syscall_leave,      VTSS_SYMBOL_SYSCALL_LEAVE)
 #endif
 
+//#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,15,0)
+//DEFINE_JP_STUB(sched_switch, VTSS_SYMBOL_SCHED_SWITCH, VTSS_SYMBOL_SCHED_SWITCH_AUX)
+//#endif
 /* ------------------------------------------------------------------------- */
 /* stubs with tracepoints */
-#if defined(CONFIG_TRACEPOINTS) && defined(VTSS_AUTOCONF_TRACE_EVENTS_SCHED)
-DEFINE_TRACE(sched_switch)
-DEFINE_TRACE(sched_process_fork)
-DEFINE_TRACE(sched_process_exit)
+#if defined(CONFIG_TRACEPOINTS) && defined(VTSS_TRACE_EVENTS_SCHED)
+//DEFINE_TRACE(sched_switch)
+//DEFINE_TRACE(sched_process_fork)
+//DEFINE_TRACE(sched_process_exit)
 #undef _REGISTER_TRACE
 #undef _UNREGISTER_TRACE
 #define _REGISTER_TRACE(name) \
@@ -623,7 +711,9 @@ DEFINE_TRACE(sched_process_exit)
     rc = unregister_trace_##name(tp_##name VTSS_TP_DATA);
 #endif
 
+//#if LINUX_VERSION_CODE < KERNEL_VERSION(3,15,0)
 DEFINE_JP_STUB(sched_switch, VTSS_SYMBOL_SCHED_SWITCH, VTSS_SYMBOL_SCHED_SWITCH_AUX)
+//#endif
 DEFINE_RP_STUB(sched_process_fork, VTSS_SYMBOL_PROC_FORK, 0)
 DEFINE_KP_STUB(sched_process_exit, VTSS_SYMBOL_PROC_EXIT)
 
@@ -681,7 +771,7 @@ int probe_sched_process_exec_compat( void )
     _rp_sched_process_exec_compat.addr = (kprobe_opcode_t*)kallsyms_lookup_name(VTSS_SYMBOL_PROC_COMPAT_EXEC);
     if (!_rp_sched_process_exec_compat.addr) {
         INFO("Lookup the name of kretprobe %s failed. Trying to find %s name", VTSS_SYMBOL_PROC_COMPAT_EXEC, VTSS_SYMBOL_PROC_COMPAT_EXEC1 );
-        _rp_sched_process_exec_compat.addr = (kprobe_opcode_t*)kallsyms_lookup_name(VTSS_SYMBOL_PROC_COMPAT_EXEC);
+        _rp_sched_process_exec_compat.addr = (kprobe_opcode_t*)kallsyms_lookup_name(VTSS_SYMBOL_PROC_COMPAT_EXEC1);
         used_exec1_symbol = 1;
         if (!_rp_sched_process_exec_compat.addr) {
              ERROR("Unable to find symbol '%s'", VTSS_SYMBOL_PROC_COMPAT_EXEC1);
@@ -754,7 +844,7 @@ void vtss_probe_fini(void)
     unprobe_syscall_enter();
     unprobe_syscall_leave();
 #endif
-#if defined(CONFIG_TRACEPOINTS) && defined(VTSS_AUTOCONF_TRACE_EVENTS_SCHED)
+#if defined(CONFIG_TRACEPOINTS) && defined(VTSS_TRACE_EVENTS_SCHED)
     tracepoint_synchronize_unregister();
 #endif
 }

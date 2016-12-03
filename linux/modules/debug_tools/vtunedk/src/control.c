@@ -41,9 +41,13 @@
 #include <linux/sched.h>
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27)
-#define SMP_CALL_FUNCTION(func,ctx,retry,wait)    smp_call_function((func),(ctx),(wait))
+#define SMP_CALL_FUNCTION(func,ctx,retry,wait)               smp_call_function((func),(ctx),(wait))
+#define SMP_CALL_FUNCTION_SINGLE(cpuid,func,ctx,retry,wait)  smp_call_function_single((cpuid),(func),(ctx),(wait))
+#define ON_EACH_CPU(func,ctx,retry,wait)                     on_each_cpu((func),(ctx),(wait))
 #else
-#define SMP_CALL_FUNCTION(func,ctx,retry,wait)    smp_call_function((func),(ctx),(retry),(wait))
+#define SMP_CALL_FUNCTION(func,ctx,retry,wait)               smp_call_function((func),(ctx),(retry),(wait))
+#define SMP_CALL_FUNCTION_SINGLE(cpuid,func,ctx,retry,wait)  smp_call_function_single((cpuid),(func),(ctx),(retry),(wait))
+#define ON_EACH_CPU(func,ctx,retry,wait)                     on_each_cpu((func),(ctx),(retry),(wait))
 #endif
 
 /*
@@ -78,7 +82,7 @@ CONTROL_Invoke_Cpu (
     PVOID   ctx
 )
 {
-    CONTROL_Invoke_Parallel(func, ctx);
+    SMP_CALL_FUNCTION_SINGLE(cpu_idx, func, ctx, 0, 1);
 
     return;
 }
@@ -115,12 +119,19 @@ CONTROL_Invoke_Parallel_Service (
     GLOBAL_STATE_cpu_count(driver_state) = 0;
     GLOBAL_STATE_dpc_count(driver_state) = 0;
 
+    if (GLOBAL_STATE_num_cpus(driver_state) == 1) {
+        if (!exclude) {
+            func(ctx);
+        }
+        return;
+    }
+    if (!exclude) {
+        ON_EACH_CPU(func, ctx, 0, blocking);
+        return;
+    }
+
     preempt_disable();
     SMP_CALL_FUNCTION (func, ctx, 0, blocking);
-
-    if (!exclude) {
-        func(ctx);
-    }
     preempt_enable();
 
     return;

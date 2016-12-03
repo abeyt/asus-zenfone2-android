@@ -46,7 +46,8 @@
 #include "ecb_iterators.h"
 #include "unc_common.h"
 
-extern U64           *read_unc_ctr_info;
+extern U64           *read_counter_info;
+extern U64           *prev_counter_data;
 
 /******************************************************************************************
  * @fn          static VOID unc_power_snb_Write_PMU(VOID*)
@@ -127,6 +128,59 @@ unc_power_hsw_Read_Counts (
     return;
 }
 
+
+/* ------------------------------------------------------------------------- */
+/*!
+ * @fn       unc_power_hsw_Enable_PMU(param)
+ *
+ * @param    None
+ *
+ * @return   None
+ *
+ * @brief      Capture the previous values to calculate delta later.
+ */
+static VOID
+unc_power_hsw_Enable_PMU (
+    PVOID  param
+)
+{
+    S32                   j;
+    U64                  *buffer             = prev_counter_data;
+    U32                   dev_idx            = *((U32*)param);
+    U32                   start_index;
+    DRV_CONFIG            pcfg_unc;
+    U32                   this_cpu           = CONTROL_THIS_CPU();
+    CPU_STATE             pcpu               = &pcb[this_cpu];
+    U32                   num_cpus           = GLOBAL_STATE_num_cpus(driver_state);
+    U32                   thread_event_count = 0;
+
+    pcfg_unc = (DRV_CONFIG)LWPMU_DEVICE_pcfg(&devices[dev_idx]);
+
+    // NOTE THAT the enable function currently captures previous values
+    // for EMON collection to avoid unnecessary memory copy.
+    if (!DRV_CONFIG_emon_mode(pcfg_unc)) {
+        return;
+    }
+
+    start_index = DRV_CONFIG_emon_unc_offset(pcfg_unc, 0);
+
+    FOR_EACH_DATA_REG_UNC(pecb, dev_idx, i) {
+        if (ECB_entries_event_scope(pecb,i) == PACKAGE_EVENT) {
+            j = start_index + thread_event_count*(num_cpus-1) + ECB_entries_group_index(pecb,i) + ECB_entries_emon_event_id_index_local(pecb,i);
+            if (!CPU_STATE_socket_master(pcpu)) {
+                continue;
+            }
+        }
+        else {
+            j = start_index + this_cpu + thread_event_count*(num_cpus-1) + ECB_entries_group_index(pecb,i) + ECB_entries_emon_event_id_index_local(pecb,i);
+            thread_event_count++;
+        }
+        buffer[j] = SYS_Read_MSR(ECB_entries_reg_id(pecb,i));
+    } END_FOR_EACH_DATA_REG_UNC;
+
+    return;
+}
+
 /* ------------------------------------------------------------------------- */
 /*!
  * @fn       unc_power_hsw_Read_PMU_Data(param)
@@ -145,7 +199,8 @@ unc_power_hsw_Read_PMU_Data (
 )
 {
     S32                   j;
-    U64                  *buffer             = read_unc_ctr_info;
+    U64                  *buffer             = read_counter_info;
+    U64                  *prev_buffer        = prev_counter_data;
     U32                   dev_idx            = *((U32*)param);
     U32                   start_index;
     DRV_CONFIG            pcfg_unc;
@@ -153,6 +208,7 @@ unc_power_hsw_Read_PMU_Data (
     CPU_STATE             pcpu               = &pcb[this_cpu];
     U32                   num_cpus           = GLOBAL_STATE_num_cpus(driver_state);
     U32                   thread_event_count = 0;
+    U64                   tmp_value;
 
     pcfg_unc    = (DRV_CONFIG)LWPMU_DEVICE_pcfg(&devices[dev_idx]);
     start_index = DRV_CONFIG_emon_unc_offset(pcfg_unc, 0);
@@ -168,7 +224,18 @@ unc_power_hsw_Read_PMU_Data (
             j = start_index + this_cpu + thread_event_count*(num_cpus-1) + ECB_entries_group_index(pecb,i) + ECB_entries_emon_event_id_index_local(pecb,i);
             thread_event_count++;
         }
-        buffer[j] = SYS_Read_MSR(ECB_entries_reg_id(pecb,i));
+        tmp_value = SYS_Read_MSR(ECB_entries_reg_id(pecb,i));
+        if (ECB_entries_counter_type(pecb,i) == STATIC_COUNTER) {
+            buffer[j] = tmp_value;
+        }
+        else {
+            if (tmp_value >= prev_buffer[j]) {
+                buffer[j] = tmp_value - prev_buffer[j];
+            }
+            else {
+                buffer[j] = tmp_value + (ECB_entries_max_bits(pecb,i) - prev_buffer[j]);
+            }
+        }
     } END_FOR_EACH_DATA_REG_UNC;
 
     return;
@@ -198,6 +265,75 @@ unc_power_avt_Read_Counts (
     return;
 }
 
+
+/* ------------------------------------------------------------------------- */
+/*!
+ * @fn unc_power_avt_Enable_PMU(param)
+ *
+ * @param    None
+ *
+ * @return   None
+ *
+ * @brief    Capture the previous values to calculate delta later.
+ */
+static VOID
+unc_power_avt_Enable_PMU (
+    PVOID  param
+)
+{
+    S32                   j;
+    U64                  *buffer              = prev_counter_data;
+    U32                   dev_idx             = *((U32*)param);
+    U32                   start_index;
+    DRV_CONFIG            pcfg_unc;
+    U32                   this_cpu            = CONTROL_THIS_CPU();
+    CPU_STATE             pcpu                = &pcb[this_cpu];
+    U32                   num_cpus            = GLOBAL_STATE_num_cpus(driver_state);
+    U32                   cur_grp             = LWPMU_DEVICE_cur_group(&devices[(dev_idx)]);
+    U32                   package_event_count = 0;
+    U32                   thread_event_count  = 0;
+    U32                   module_event_count  = 0;
+
+    pcfg_unc    = (DRV_CONFIG)LWPMU_DEVICE_pcfg(&devices[dev_idx]);
+
+    // NOTE THAT the enable function currently captures previous values
+    // for EMON collection to avoid unnecessary memory copy.
+    if (!DRV_CONFIG_emon_mode(pcfg_unc)) {
+        return;
+    }
+
+    start_index = DRV_CONFIG_emon_unc_offset(pcfg_unc, cur_grp);
+
+    FOR_EACH_DATA_REG_UNC(pecb, dev_idx, i) {
+        j =   start_index + ECB_entries_group_index(pecb,i)  +
+               package_event_count*num_packages +
+               module_event_count*(GLOBAL_STATE_num_modules(driver_state)) +
+               thread_event_count*num_cpus ;
+        if (ECB_entries_event_scope(pecb,i) == PACKAGE_EVENT) {
+            j = j + core_to_package_map[this_cpu];
+            package_event_count++;
+            if (!CPU_STATE_socket_master(pcpu)) {
+                continue;
+            }
+        }
+        else if (ECB_entries_event_scope(pecb,i) == MODULE_EVENT) {
+            j = j + CPU_STATE_cpu_module_num(pcpu);
+            module_event_count++;
+            if (!CPU_STATE_cpu_module_master(pcpu)) {
+                continue;
+            }
+        }
+        else {
+            j = j + this_cpu;
+            thread_event_count++;
+        }
+        buffer[j] = SYS_Read_MSR(ECB_entries_reg_id(pecb,i));
+    } END_FOR_EACH_DATA_REG_UNC;
+
+    return;
+}
+
+
 /* ------------------------------------------------------------------------- */
 /*!
  * @fn unc_power_avt_Read_PMU_Data(param)
@@ -215,7 +351,8 @@ unc_power_avt_Read_PMU_Data (
 )
 {
     S32                   j;
-    U64                  *buffer              = read_unc_ctr_info;
+    U64                  *buffer              = read_counter_info;
+    U64                  *prev_buffer         = prev_counter_data;
     U32                   dev_idx             = *((U32*)param);
     U32                   start_index;
     DRV_CONFIG            pcfg_unc;
@@ -226,6 +363,7 @@ unc_power_avt_Read_PMU_Data (
     U32                   package_event_count = 0;
     U32                   thread_event_count  = 0;
     U32                   module_event_count  = 0;
+    U64                   tmp_value;
 
     pcfg_unc    = (DRV_CONFIG)LWPMU_DEVICE_pcfg(&devices[dev_idx]);
     start_index = DRV_CONFIG_emon_unc_offset(pcfg_unc, cur_grp);
@@ -253,8 +391,18 @@ unc_power_avt_Read_PMU_Data (
             j = j + this_cpu;
             thread_event_count++;
         }
-        buffer[j] = SYS_Read_MSR(ECB_entries_reg_id(pecb,i));
-        //SEP_PRINT_DEBUG("cpu=%d j=%d mec=%d mid=%d tec=%d i=%d gi=%d ei=%d count=%llu\n", this_cpu, j, module_event_count, CPU_STATE_cpu_module_num(pcpu), thread_event_count, i, ECB_entries_group_index(pecb,i), ECB_entries_emon_event_id_index_local(pecb,i), buffer[j]);
+        tmp_value = SYS_Read_MSR(ECB_entries_reg_id(pecb,i));
+        if (ECB_entries_counter_type(pecb,i) == STATIC_COUNTER) {
+            buffer[j] = tmp_value;
+        }
+        else {
+            if (tmp_value >= prev_buffer[j]) {
+                buffer[j] = tmp_value - prev_buffer[j];
+            }
+            else {
+                buffer[j] = tmp_value + (ECB_entries_max_bits(pecb,i) - prev_buffer[j]);
+            }
+        }
     } END_FOR_EACH_DATA_REG_UNC;
 
     return;
@@ -295,7 +443,7 @@ DISPATCH_NODE  haswell_power_dispatch =
     NULL,                        // destroy
     UNC_COMMON_Dummy_Func,       // write
     NULL,                        // freeze
-    NULL,                        // restart
+    unc_power_hsw_Enable_PMU,    // restart
     unc_power_hsw_Read_PMU_Data, // read
     NULL,                        // check for overflow
     NULL,                        // swap group
@@ -321,7 +469,7 @@ DISPATCH_NODE  avoton_power_dispatch =
     NULL,                         // destroy
     UNC_COMMON_Dummy_Func,        // write
     NULL,                         // freeze
-    NULL,                         // restart
+    unc_power_avt_Enable_PMU,     // restart
     unc_power_avt_Read_PMU_Data,  // read
     NULL,                         // check for overflow
     NULL,                         // swap group

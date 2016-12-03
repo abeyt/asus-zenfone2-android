@@ -50,6 +50,8 @@
 
 struct pt_regs;
 
+void vtss_collection_cfg_init(void);
+
 void vtss_target_fork(struct task_struct* task, struct task_struct* child);
 void vtss_target_exec_enter(struct task_struct* task, const char *filename, const char *config);
 void vtss_target_exec_leave(struct task_struct* task, const char *filename, const char *config, int rc);

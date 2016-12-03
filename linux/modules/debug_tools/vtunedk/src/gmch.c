@@ -33,7 +33,7 @@
 #include "lwpmudrv_defines.h"
 #include "lwpmudrv_types.h"
 
-#if defined(DRV_ANDROID)
+#if defined(PCI_HELPERS_API)
 #include <asm/intel_scu_ipc.h>
 #include <asm/intel-mid.h>
 #endif
@@ -75,7 +75,7 @@ extern EVENT_CONFIG      global_ec;
  * @return    the read value
  *
  */
-#if defined(DRV_ANDROID)
+#if defined(PCI_HELPERS_API)
 #define gmch_PCI_Read32   intel_mid_msgbus_read32_raw
 #else
 static U32
@@ -103,7 +103,7 @@ gmch_PCI_Read32 (
  * @return    None
  *
  */
-#if defined(DRV_ANDROID)
+#if defined(PCI_HELPERS_API)
 #define gmch_PCI_Write32  intel_mid_msgbus_write32_raw
 #else
 static void

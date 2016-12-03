@@ -32,4 +32,12 @@
 #include "msrdefs.h"
 extern DISPATCH_NODE  silvermont_dispatch;
 
+#if defined(DRV_IA32)
+#define SILVERMONT_LBR_DATA_BITS             32
+#else
+#define SILVERMONT_LBR_DATA_BITS             48
+#endif
+
+#define SILVERMONT_LBR_BITMASK               ((1ULL << SILVERMONT_LBR_DATA_BITS) -1)
+
 #endif

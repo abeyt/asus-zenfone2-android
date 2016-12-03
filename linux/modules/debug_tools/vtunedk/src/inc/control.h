@@ -154,6 +154,7 @@ struct CPU_STATE_NODE_S {
     U64         last_visa_count[16];
     U16         cpu_module_num;
     U16         cpu_module_master;
+    S32         system_master;
 };
 
 #define CPU_STATE_apic_id(cpu)              (cpu)->apic_id
@@ -191,6 +192,7 @@ struct CPU_STATE_NODE_S {
 #define CPU_STATE_cpu_module_num(cpu)       (cpu)->cpu_module_num
 #define CPU_STATE_cpu_module_master(cpu)    (cpu)->cpu_module_master
 #define CPU_STATE_p_state_counting(cpu)     (cpu)->p_state_counting
+#define CPU_STATE_system_master(cpu)        (cpu)->system_master
 
 /*
  * For storing data for --read/--write-msr command line options

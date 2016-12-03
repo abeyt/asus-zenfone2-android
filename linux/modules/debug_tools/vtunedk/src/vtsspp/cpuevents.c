@@ -50,7 +50,11 @@
 /// P6 MSRs
 #define MSR_PERF_GLOBAL_CTRL 0x38f
 #define IA32_FIXED_CTR_CTRL  0x38d
-#define IA32_FIXED_CTR0      0x309
+
+#define IA32_FIXED_CTR0      0x309 //instruction ret counter
+      //IA32_FIXED_CTR0+1)           core counter
+      //IA32_FIXED_CTR0+2            ref counter
+
 #define IA32_PERFEVTSEL0     0x186
 #define IA32_PMC0            0x0c1
 
@@ -172,6 +176,7 @@ void vtss_cpuevents_reqcfg_default(int need_clear, int defsav)
     int mux_cnt = 0;
     int namespace_size = 0;
 
+    INFO("reqcfg.cpuevent_count_v1 = %d", (int)reqcfg.cpuevent_count_v1);
     if (need_clear) {
         memset(&reqcfg, 0, sizeof(process_cfg_t));
         reqcfg.trace_cfg.trace_flags =  VTSS_CFGTRACE_CTX    | VTSS_CFGTRACE_CPUEV   |
@@ -246,15 +251,32 @@ void vtss_sysevents_reqcfg_append(void)
     int mux_grp = 0;
     int namespace_size = 0;
 
+    const int idle_idx = 2;
+    const int idle_last = 8;
+    const int active_idx = 9;
+    const int active_last = 13;
+    int sys_event_idx = 2;
+
+    INFO("reqcfg.cpuevent_count_v1 = %d", (int)reqcfg.cpuevent_count_v1);
     /* Find out the count of mux groups and namespace size */
     for (i = 0; i < reqcfg.cpuevent_count_v1; i++) {
         mux_grp = (mux_grp < reqcfg.cpuevent_cfg_v1[i].mux_grp) ? reqcfg.cpuevent_cfg_v1[i].mux_grp : mux_grp;
         namespace_size += reqcfg.cpuevent_cfg_v1[i].name_len + reqcfg.cpuevent_cfg_v1[i].desc_len;
     }
     /* insert system event records (w/names) into each mux_grp */
-    for (i = 0; i < vtss_sysevent_end && reqcfg.cpuevent_count_v1 < VTSS_CFG_CHAIN_SIZE; i++) {
+    for (i = sys_event_idx; i < vtss_sysevent_end && reqcfg.cpuevent_count_v1 < VTSS_CFG_CHAIN_SIZE; i++) {
         if (sysevent_type[i] == vtss_sysevent_end) {
             /* skip events that are not supported on this architecture */
+            continue;
+        }
+        if (i >= idle_idx && i <= idle_last && (!( reqcfg.trace_cfg.trace_flags & VTSS_CFGTRACE_PWRIDLE)))
+        {
+            // idle power not required
+            continue;
+        }
+        if (i >= active_idx && i <= active_last && (!( reqcfg.trace_cfg.trace_flags & VTSS_CFGTRACE_PWRACT)))
+        {
+            // active power not required
             continue;
         }
         for (j = 0; j <= mux_grp && reqcfg.cpuevent_count_v1 < VTSS_CFG_CHAIN_SIZE; j++) {
@@ -298,8 +320,12 @@ void vtss_sysevents_reqcfg_append(void)
 void vtss_cpuevents_upload(cpuevent_t* cpuevent_chain, cpuevent_cfg_v1_t* cpuevent_cfg, int count)
 {
     int i = 0;
+    int j = 0;
     int mux_cnt = 0;
-
+    int fixed_cnt[3];
+    int fixed_cnt_slave=0;
+    fixed_cnt[0]=fixed_cnt[1]=fixed_cnt[2]=-1;
+    INFO("reqcfg.cpuevent_count_v1 = %d", (int)reqcfg.cpuevent_count_v1);
     for (i = 0; i < count; i++) {
         cpuevent_chain[i].valid = 1;
         if (cpuevent_cfg[i].event_id >= VTSS_CFG_CHAIN_SIZE) {
@@ -338,12 +364,9 @@ void vtss_cpuevents_upload(cpuevent_t* cpuevent_chain, cpuevent_cfg_v1_t* cpueve
             }
             /// set up counter offset for fixed events
             if (hardcfg.family == 0x06 && cpuevent_cfg[i].selmsr.idx == IA32_FIXED_CTR_CTRL) {
-                /// set up fixed counter events as slaves (that follow leading events)
-                if (cpuevent_cfg[i].cntmsr.idx == IA32_FIXED_CTR0 || //lp: instruction ret counter
-                    cpuevent_cfg[i].cntmsr.idx == IA32_FIXED_CTR0+1) // core counter, IA32_FIXED_CTR0+2 - ref counter
+                if (cpuevent_cfg[i].cntmsr.idx - IA32_FIXED_CTR0 < 3 && cpuevent_cfg[i].cntmsr.idx - IA32_FIXED_CTR0 >= 0)
                 {
-                    cpuevent_chain[i].slave_interval = cpuevent_cfg[i].interval;
-                    cpuevent_chain[i].interval = 0;
+                    fixed_cnt[cpuevent_cfg[i].cntmsr.idx - IA32_FIXED_CTR0]=i;
                 }
                 /// form the modifier to enable correct masking of control MSR in vft->restart()
                 cpuevent_chain[i].modifier = (int)((cpuevent_cfg[i].selmsr.val >>
@@ -383,6 +406,18 @@ void vtss_cpuevents_upload(cpuevent_t* cpuevent_chain, cpuevent_cfg_v1_t* cpueve
         );
     }
 
+    for (j = 2; j>=0; j--)
+    {
+        if (fixed_cnt[j] == -1) continue;
+        if (fixed_cnt_slave == 0)
+        {
+            fixed_cnt_slave = 1;
+            continue;
+        }
+        /// set up fixed counter events as slaves (that follow leading events)
+        cpuevent_chain[fixed_cnt[j]].slave_interval = cpuevent_cfg[fixed_cnt[j]].interval;
+        cpuevent_chain[fixed_cnt[j]].interval = 0;
+    }
     if (i) {
         cpuevent_chain[0].mux_cnt = mux_cnt;
         if (hardcfg.family == 0x06) { // P6
@@ -687,8 +722,12 @@ static void vtss_cpuevents_setup(void *ctx)
 
 int vtss_cpuevents_init_pmu(int defsav)
 {
-    if (reqcfg.cpuevent_count_v1 == 0) {
+    INFO ("init pmu, reqcfg.cpuevent_count_v1=%d", (int)reqcfg.cpuevent_count_v1);
+    if ((reqcfg.cpuevent_count_v1 == 0 && !(reqcfg.trace_cfg.trace_flags & (VTSS_CFGTRACE_CTX|VTSS_CFGTRACE_PWRACT|VTSS_CFGTRACE_PWRIDLE)))||
+        (reqcfg.cpuevent_count_v1 == 0 && hardcfg.family == 0x0b))
+    {
         /* There is no configuration was get from runtool, so init defaults */
+        INFO("There is no configuration was get from runtool, so init defaults");
         vtss_cpuevents_reqcfg_default(1, defsav);
         vtss_sysevents_reqcfg_append();
     }
@@ -838,8 +877,12 @@ int vtss_cpuevents_init(void)
     }
     /// TODO: validate SNB and MFLD energy meters:
     /// sysevent_type[vtss_sysevent_energy_xxx] = vtss_sysevent_end if not present
+    INFO("family=%x, model=%x", hardcfg.family,hardcfg.model);
     if (hardcfg.family == 0x06) {
-        if (hardcfg.model == 0x2a) {
+        if(hardcfg.model == 0x2a || hardcfg.model == 0x3a || hardcfg.model == 0x3c ||
+           hardcfg.model == 0x3d || hardcfg.model == 0x3e || hardcfg.model == 0x3f ||
+           hardcfg.model == 0x45 || hardcfg.model == 0x46)
+        {
             sysevent_type[vtss_sysevent_energy_dram] = vtss_sysevent_end;
         } else if (hardcfg.model == 0x2d) {
             sysevent_type[vtss_sysevent_energy_gfx]  = vtss_sysevent_end;

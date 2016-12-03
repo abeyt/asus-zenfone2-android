@@ -2,7 +2,7 @@ How to build zenfone kernel
 
 #1 download aosp source code
 	cd [working dir]
-	repo init -u https://android.googlesource.com/platform/manifest -b android-5.0.0_r7
+	repo init -u https://android.googlesource.com/platform/manifest -b android-6.0.1_r8
 	repo sync
 
 #2 extract kernel source code to working dir
@@ -17,11 +17,11 @@ How to build zenfone kernel
 ## define TARGET_DEVICE to overwrite
 ## available options : 
 ## 	TARGET_DEVICE=hd  (ZE550ML - default)
-##	TARGET_DEVICE=fhd (ZE551ML)
+##	TARGET_DEVICE=fhd (ZE551ML), (ZX551ML)
 
-	make -f KernelMakefile TARGET_DEVICE=hd build_kernel
+	make -f KernelMakefile TARGET_DEVICE=fhd build_kernel
   	or
-	make -f KernelMakefile TARGET_DEVICE=hd modules_install
+	make -f KernelMakefile TARGET_DEVICE=fhd modules_install
 
 
 	

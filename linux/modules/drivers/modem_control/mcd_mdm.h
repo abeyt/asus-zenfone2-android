@@ -38,6 +38,5 @@ int mcd_mdm_cold_boot_ngff(void *data);
 int mcd_mdm_power_off_ngff(void *data);
 int mcd_mdm_cold_boot_2230(void *data);
 int mcd_mdm_power_off_2230(void *data);
-int mcd_mdm_ap_cdump(void *data);
 
 #endif				/* _MDM_IMC_H */

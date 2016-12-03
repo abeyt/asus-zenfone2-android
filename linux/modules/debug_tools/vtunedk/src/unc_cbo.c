@@ -52,8 +52,6 @@
 #include "pebs.h"
 #include "unc_common.h"
 
-extern U64           *read_unc_ctr_info;
-
 
 /***********************************************************************
  *

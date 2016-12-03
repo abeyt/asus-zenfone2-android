@@ -51,8 +51,13 @@ extern LBR            lbr;
 extern DRV_CONFIG     pcfg;
 extern U64           *interrupt_counts;
 
+typedef struct SADDR_S {
+    S64 addr:SILVERMONT_LBR_DATA_BITS;
+} SADDR;
+
+#define SADDR_addr(x)               (x).addr
 #define ADD_ERRATA_FIX_FOR_FIXED_CTR0
-#define MSR_ENERGY_MULTIPLIER         0x606        // Energy Multiplier MSR
+#define MSR_ENERGY_MULTIPLIER       0x606        // Energy Multiplier MSR
 
 #if defined(DRV_IA32)
 #define ENABLE_IA32_PERFEVTSEL0_CTR 0x00400000
@@ -618,27 +623,39 @@ silvermont_Read_LBRs (
     VOID   *buffer
 )
 {
-    U32  i, count = 0;
-    U64 *lbr_buf = (U64 *)buffer;
-    U64 tos_ip_addr = 0;
-    U64 tos_ptr = 0;
+    U32   i, count = 0;
+    U64  *lbr_buf = NULL;
+    U64   value;
+    U64   tos_ip_addr = 0;
+    U64   tos_ptr = 0;
+    SADDR saddr;
 
+    if (buffer && DRV_CONFIG_store_lbrs(pcfg)) {
+        lbr_buf = (U64 *)buffer;
+    }
     SEP_PRINT_DEBUG("Inside silvermont_Read_LBRs\n");
     for (i = 0; i < LBR_num_entries(lbr); i++) {
-        *lbr_buf = SYS_Read_MSR(LBR_entries_reg_id(lbr,i));
-        SEP_PRINT_DEBUG("silvermont_Read_LBRs %u, 0x%llx\n", i, *lbr_buf);
+        value = SYS_Read_MSR(LBR_entries_reg_id(lbr,i));
+        if (buffer && DRV_CONFIG_store_lbrs(pcfg)) {
+            *lbr_buf = value;
+        }
+        SEP_PRINT_DEBUG("silvermont_Read_LBRs %u, 0x%llx\n", i, value);
         if (i == 0) {
-            tos_ptr = *lbr_buf;
-        } else {
-            if (LBR_entries_etype(lbr, i) == 1) {
+            tos_ptr = value;
+        }
+        else {
+            if (LBR_entries_etype(lbr, i) == LBR_ENTRY_FROM_IP) {
                 if (tos_ptr == count) {
-                    tos_ip_addr = *lbr_buf;
-                    SEP_PRINT_DEBUG("tos_ip_addr %llu, 0x%llx\n", tos_ptr, *lbr_buf);
+                    SADDR_addr(saddr) = value & SILVERMONT_LBR_BITMASK;
+                    tos_ip_addr = (U64) SADDR_addr(saddr); // Add signed extension
+                    SEP_PRINT_DEBUG("tos_ip_addr %llu, 0x%llx\n", tos_ptr, value);
                 }
                 count++;
             }
         }
-        lbr_buf++;
+        if (buffer && DRV_CONFIG_store_lbrs(pcfg)) {
+            lbr_buf++;
+        }
     }
 
     return tos_ip_addr;

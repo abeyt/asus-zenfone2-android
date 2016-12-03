@@ -37,6 +37,4 @@ int get_gpio_mdm_state_ngff(void *data);
 int get_gpio_irq_cdump_ngff(void *data);
 int get_gpio_irq_rst_ngff(void *data);
 int get_gpio_on(void *data);
-int get_gpio_apcdump(void *data);
-
 #endif

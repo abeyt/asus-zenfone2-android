@@ -501,6 +501,7 @@ static void async_completed(struct urb *urb)
 	as->status = urb->status;
 	signr = as->signr;
 	if (signr) {
+		memset(&sinfo, 0, sizeof(sinfo));
 		sinfo.si_signo = as->signr;
 		sinfo.si_errno = as->status;
 		sinfo.si_code = SI_ASYNCIO;
@@ -1105,10 +1106,11 @@ static int proc_getdriver(struct dev_state *ps, void __user *arg)
 
 static int proc_connectinfo(struct dev_state *ps, void __user *arg)
 {
-	struct usbdevfs_connectinfo ci = {
-		.devnum = ps->dev->devnum,
-		.slow = ps->dev->speed == USB_SPEED_LOW
-	};
+	struct usbdevfs_connectinfo ci;
+
+	memset(&ci, 0, sizeof(ci));
+	ci.devnum = ps->dev->devnum;
+	ci.slow = ps->dev->speed == USB_SPEED_LOW;
 
 	if (copy_to_user(arg, &ci, sizeof(ci)))
 		return -EFAULT;
@@ -2228,6 +2230,7 @@ static void usbdev_remove(struct usb_device *udev)
 		wake_up_all(&ps->wait);
 		list_del_init(&ps->list);
 		if (ps->discsignr) {
+			memset(&sinfo, 0, sizeof(sinfo));
 			sinfo.si_signo = ps->discsignr;
 			sinfo.si_errno = EPIPE;
 			sinfo.si_code = SI_ASYNCIO;

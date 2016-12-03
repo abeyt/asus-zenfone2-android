@@ -29,7 +29,10 @@
 #include <asm/intel_scu_flis.h>
 #include <linux/intel_mid_gps.h>
 #include <linux/lnw_gpio.h>
-
+#ifdef CONFIG_BROADCOM_BCM4774_GPS
+#include <linux/hrtimer.h>
+#include <linux/delay.h>
+#endif
 
 #define DRIVER_NAME "intel_mid_gps"
 
@@ -39,6 +42,55 @@
 
 struct device *tty_dev = NULL;
 struct wake_lock hostwake_lock;
+
+#ifdef CONFIG_BROADCOM_BCM4774_GPS
+struct bcm_gps_lpm {
+    int mcu_resp_gpio_pin;
+    int mcu_req_gpio_pin;
+
+    struct hrtimer enter_lpm_timer;
+    ktime_t enter_lpm_delay;
+
+    struct device *tty_dev;
+
+    int port;
+} gps_lpm;
+
+static bool bcm477x_hello(void)
+{
+    int count=0, retries=0;
+
+    gpio_set_value(gps_lpm.mcu_req_gpio_pin, 1);
+    while (!gpio_get_value(gps_lpm.mcu_resp_gpio_pin)) {
+    	if (count++ > 100) {
+    	    gpio_set_value(gps_lpm.mcu_req_gpio_pin, 0);
+    	    return false;
+    	}
+
+    	mdelay(1);
+
+    	/*if awake, done */
+    	if (gpio_get_value(gps_lpm.mcu_resp_gpio_pin)) break;
+
+    	if (count%20==0 && retries++ < 3) {
+    	    gpio_set_value(gps_lpm.mcu_req_gpio_pin, 0);
+    	    mdelay(1);
+    	    gpio_set_value(gps_lpm.mcu_req_gpio_pin, 1);
+    	    mdelay(1);
+    	}
+    }
+    return true;
+}
+
+/*
+ * bcm4773_bye - set mcu_req low to let chip go to sleep
+ *
+ */
+static void bcm477x_bye(void)
+{
+    gpio_set_value(gps_lpm.mcu_req_gpio_pin, 0);
+}
+#endif
 
 /*********************************************************************
  *		Driver GPIO toggling functions
@@ -184,12 +236,40 @@ static irqreturn_t intel_mid_gps_hostwake_isr(int irq, void *dev)
 	return IRQ_HANDLED;
 }
 
+#ifdef CONFIG_BROADCOM_BCM4774_GPS
+static enum hrtimer_restart gps_enter_lpm(struct hrtimer *timer)
+{
+	bcm477x_bye();
+
+	return HRTIMER_NORESTART;
+}
+static void bcm_gps_lpm_wake_peer(struct device *dev)
+{
+	gps_lpm.tty_dev = dev;
+
+	hrtimer_try_to_cancel(&gps_lpm.enter_lpm_timer);
+
+	bcm477x_hello();
+
+	hrtimer_start(&gps_lpm.enter_lpm_timer, gps_lpm.enter_lpm_delay,
+		HRTIMER_MODE_REL);
+}
+#endif
+
 static int intel_mid_gps_init(struct platform_device *pdev)
 {
 	int ret;
 	struct intel_mid_gps_platform_data *pdata = dev_get_drvdata(&pdev->dev);
 	struct kset *sysdev;
 	struct kobject *plat;
+
+#ifdef CONFIG_BROADCOM_BCM4774_GPS
+	gps_lpm.port = CONFIG_BROADCOM_BCM4774_GPS_UART_PORT;
+
+	hrtimer_init(&gps_lpm.enter_lpm_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+	gps_lpm.enter_lpm_delay = ktime_set(1, 0);  /* 1 sec */
+	gps_lpm.enter_lpm_timer.function = gps_enter_lpm;
+#endif
 
 	/* we need to rename the sysfs entry to match the one created with SFI,
 	   and we are sure that there is always one GPS per platform */
@@ -310,6 +390,16 @@ static int intel_mid_gps_init(struct platform_device *pdev)
 		wake_lock_init(&hostwake_lock, WAKE_LOCK_SUSPEND, "gps_hostwake_lock");
 	}
 
+#ifdef CONFIG_BROADCOM_BCM4774_GPS
+	tty_dev = intel_mid_hsu_set_wake_peer(1, bcm_gps_lpm_wake_peer);
+	if (!tty_dev) {
+		pr_err("Error no tty dev");
+		return -ENODEV;
+	}
+
+	bcm_gps_lpm_wake_peer(tty_dev);
+#endif
+
 	return 0;
 
 error_gpio_hostwake_direction:
@@ -382,8 +472,7 @@ static int intel_mid_gps_probe(struct platform_device *pdev)
 	} else {
 		platform_set_drvdata(pdev, pdev->dev.platform_data);
 
-		#ifdef UART_DEBUG
-
+#ifdef UART_DEBUG
 		debug_gpio_pin = get_gpio_by_name("AUDIO_DEBUG#");
 		if (debug_gpio_pin > 0) {
 		    ret = gpio_request_one(debug_gpio_pin, GPIOF_DIR_OUT, "AUDIO_DEBUG#");
@@ -391,8 +480,7 @@ static int intel_mid_gps_probe(struct platform_device *pdev)
 			pr_err("gpio_request AUDIO_DEBUG failed!\n");
 		    gpio_direction_output(debug_gpio_pin, 0);
 		}
-		#else
-
+#else
 		debug_gpio_pin = get_gpio_by_name("AUDIO_DEBUG#");
 		if (debug_gpio_pin > 0) {
 		    ret = gpio_request_one(debug_gpio_pin, GPIOF_DIR_OUT, "AUDIO_DEBUG#");
@@ -400,8 +488,38 @@ static int intel_mid_gps_probe(struct platform_device *pdev)
 			pr_err("gpio_request AUDIO_DEBUG failed!\n");
 		    gpio_direction_output(debug_gpio_pin, 1);
 		}
-		#endif
+#endif
 
+#ifdef CONFIG_BROADCOM_BCM4774_GPS
+		gps_lpm.mcu_req_gpio_pin = get_gpio_by_name("AP_GPS_REQ");
+		if (gpio_is_valid(gps_lpm.mcu_req_gpio_pin)) {
+		    ret = gpio_request(gps_lpm.mcu_req_gpio_pin, "MCU_REQ");
+		    if (ret < 0) {
+			pr_err("%s: Unable to request GPIO:%d, err:%d\n",
+			       __func__, gps_lpm.mcu_req_gpio_pin, ret);
+		    }
+		    ret = gpio_direction_output(gps_lpm.mcu_req_gpio_pin, 0);
+		    if (ret < 0) {
+			pr_err("%s: Unable to set GPIO:%d direction, err:%d\n",
+			       __func__, gps_lpm.mcu_req_gpio_pin, ret);
+		    }
+		}
+
+		gps_lpm.mcu_resp_gpio_pin = get_gpio_by_name("AP_GPS_RESP");
+		if (gpio_is_valid(gps_lpm.mcu_resp_gpio_pin)) {
+		    ret = gpio_request(gps_lpm.mcu_resp_gpio_pin, "MCU_RESP");
+		    if (ret < 0) {
+			pr_err("%s: Unable to request GPIO:%d, err:%d\n",
+			       __func__, gps_lpm.mcu_resp_gpio_pin, ret);
+		    }
+		    /* set gpio direction */
+		    ret = gpio_direction_input(gps_lpm.mcu_resp_gpio_pin);
+		    if (ret < 0) {
+			pr_err("%s: Unable to set GPIO:%d direction, err:%d\n",
+			       __func__, gps_lpm.mcu_resp_gpio_pin, ret);
+		    }
+		}
+#endif
 	}
 
 	ret = intel_mid_gps_init(pdev);

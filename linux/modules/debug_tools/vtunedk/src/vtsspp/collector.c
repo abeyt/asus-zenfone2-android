@@ -36,6 +36,7 @@
 #include "cpuevents.h"
 #include "dsa.h"
 #include "bts.h"
+#include "ipt.h"
 #include "lbr.h"
 #include "pebs.h"
 #include "time.h"
@@ -139,6 +140,9 @@ unsigned int vtss_client_minor_ver = 0;
 #define VTSS_ST_NOTIFIER   (1<<12)
 #define VTSS_ST_PMU_SET    (1<<13)
 #define VTSS_ST_MMAP_INIT  (1<<14)  //modules currently writing to the trace first time in different thread.
+/*-----------------------------*/
+//#define VTSS_ST_REC_CTX    (1<<15)  //recorded context switch for calculatiing time, even if we do not need them in result.
+//#define VTSS_ST_CPU_CHANGE (1<<16)  //recorded context switch for calculatiing time, even if we do not need them in result.
 
 static const char* task_state_str[] = {
     "-NEWTASK-",
@@ -166,6 +170,9 @@ static const char* task_state_str[] = {
 #define VTSS_IS_NOTIFIER(x)           ((x)->state & VTSS_ST_NOTIFIER)
 #define VTSS_IS_PMU_SET(x)            ((x)->state & VTSS_ST_PMU_SET)
 
+#define VTSS_IS_STATE_SET(x,st)      ((x)->state & st)
+
+
 #define VTSS_IS_MMAP_INIT(x)          ((x)->state & VTSS_ST_MMAP_INIT)
 #define VTSS_SET_MMAP_INIT(x)         (x)->state |= VTSS_ST_MMAP_INIT
 #define VTSS_CLEAR_MMAP_INIT(x)       (x)->state &= ~VTSS_ST_MMAP_INIT
@@ -182,6 +189,8 @@ static const char* task_state_str[] = {
 #define VTSS_ERROR_STACK_SAVE(x)      ((x)->state & VTSS_ST_STKSAVE)
 
 #define VTSS_STORE_STATE(x,c,y)       ((x)->state = (c) ? (x)->state | (y) : (x)->state & ~(y))
+//#define VTSS_STORE_STATE_SWAPOUT(x,c) ((x)->state = (c) ? ((x)->state | VTSS_ST_SWAPOUT) : (x)->state & ~(VTSS_ST_SWAPOUT|VTSS_ST_REC_CTX))
+//#define VTSS_STORE_STATE_SWAPIN(x,c,f1) ((x)->state = (c) ? ((x)->state | VTSS_ST_SWAPIN) : ((x)->state & ~(VTSS_ST_SWAPIN))|f1)
 
 #define VTSS_STORE_NEWTASK(x,f)       VTSS_STORE_STATE((x), vtss_record_thread_create((x)->trnd, (x)->tid, (x)->pid, (x)->cpu, (f)), VTSS_ST_NEWTASK)
 #define VTSS_STORE_SOFTCFG(x,f)       VTSS_STORE_STATE((x), vtss_record_softcfg((x)->trnd, (x)->tid, (f)), VTSS_ST_SOFTCFG)
@@ -655,13 +664,27 @@ inline int is_bts_enable(struct vtss_task_data* tskd)
     return ((reqcfg.trace_cfg.trace_flags & VTSS_CFGTRACE_BRANCH) && is_branch_overflow(tskd));
 }
 
+inline int is_callcount_enable(struct vtss_task_data* tskd)
+{
+    return ((reqcfg.trace_cfg.trace_flags & VTSS_CFGTRACE_IPT) || is_bts_enable(tskd));
+}
 
+static void vtss_callcount_disable(void)
+{
+    if (reqcfg.trace_cfg.trace_flags & VTSS_CFGTRACE_IPT) vtss_disable_ipt();
+    else vtss_bts_disable();
+}
+static void vtss_callcount_enable(void)
+{
+    if (reqcfg.trace_cfg.trace_flags & VTSS_CFGTRACE_IPT) vtss_enable_ipt();
+    else vtss_bts_enable();
+}
 static void vtss_profiling_pause(void)
 {
     unsigned long flags;
 
     local_irq_save(flags);
-    vtss_bts_disable();
+    vtss_callcount_disable();
     vtss_pebs_disable();
     vtss_cpuevents_freeze();
     vtss_lbr_disable();
@@ -722,7 +745,7 @@ static void vtss_profiling_resume(vtss_task_map_item_t* item, int bts_resume)
     if (likely(VTSS_IS_CPUEVT(tskd))) {
         /* enable BTS (if requested) */
         if (bts_resume)
-            vtss_bts_enable();
+            vtss_callcount_enable();
         /* enable LBR (if requested) */
         if (trace_flags & VTSS_CFGTRACE_LASTBR)
             vtss_lbr_enable(&tskd->lbr);
@@ -841,8 +864,8 @@ int vtss_target_new(pid_t tid, pid_t pid, pid_t ppid, const char* filename, stru
     tskd->ppid       = ppid;
 
     tskd->m32        = 0; /* unknown so far, assume native */
-    tskd->cpu        = smp_processor_id();
     tskd->ip         = NULL;
+    tskd->cpu        = smp_processor_id(); //we can set it only in cswitch_to.
     tskd->from_ip    = NULL;
 #ifndef VTSS_NO_BTS
     tskd->bts_size   = 0;
@@ -863,11 +886,18 @@ int vtss_target_new(pid_t tid, pid_t pid, pid_t ppid, const char* filename, stru
         vtss_task_map_put_item(item);
         return rc;
     }
-    if (filename != NULL) {
+    task = vtss_find_task_by_tid(tskd->tid);
+    if (task != NULL && !(task->state & TASK_DEAD)&&task->comm != NULL) { /* task exist */
+        size = min((size_t)VTSS_FILENAME_SIZE-1, (size_t)strlen(task->comm));
+        memcpy(tskd->filename, task->comm, size);
+        tskd->filename[size] = '\0';
+        INFO("task->comm: %s", task->comm);
+    } else if (filename != NULL) {
         size = min((size_t)VTSS_FILENAME_SIZE-1, (size_t)strlen(filename));
         memcpy(tskd->filename, filename, size);
+        tskd->filename[size] = '\0';
+        INFO("filename: %s", filename);
     }
-    tskd->filename[size] = '\0';
     tskd->taskname[0] = '\0';
     /* Transport initialization */
     read_lock_irqsave(&vtss_transport_init_rwlock, flags);
@@ -982,8 +1012,13 @@ int vtss_target_new(pid_t tid, pid_t pid, pid_t ppid, const char* filename, stru
                 TRACE("vtss_record_module() FAIL");
             }
 #ifdef CONFIG_X86_64
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,16,0)
             addr = (unsigned long)VSYSCALL_START;
             size = (unsigned long)(VSYSCALL_MAPPED_PAGES * PAGE_SIZE);
+#else
+            addr = (unsigned long)VSYSCALL_ADDR;
+            size = (unsigned long)PAGE_SIZE;
+#endif
             if (vtss_record_module(tskd->trnd_aux, 0, addr, size, "[vsyscall]", 0, cputsc, realtsc, SAFE)) {
                 TRACE("vtss_record_module() FAIL");
             }
@@ -1606,7 +1641,7 @@ static void vtss_sched_switch_from(vtss_task_map_item_t* item, struct task_struc
     /* store swap-out record */
     if (ip) tskd->from_ip = ip;
     if (likely(VTSS_IN_CONTEXT(tskd))) {
-        if (reqcfg.trace_cfg.trace_flags & VTSS_CFGTRACE_CTX)
+        if (1/*(reqcfg.trace_cfg.trace_flags & VTSS_CFGTRACE_CTX) || (VTSS_IS_STATE_SET(tskd, VTSS_ST_REC_CTX))*/)
             VTSS_STORE_SWAPOUT(tskd, is_preempt, NOT_SAFE);
         else
             VTSS_STORE_STATE(tskd, 0, VTSS_ST_SWAPOUT);
@@ -1617,7 +1652,7 @@ static void vtss_sched_switch_from(vtss_task_map_item_t* item, struct task_struc
             tskd->state &= ~VTSS_ST_IN_CONTEXT;
 
             if (likely(!VTSS_IS_COMPLETE(tskd) &&
-                (reqcfg.trace_cfg.trace_flags & VTSS_CFGTRACE_STACKS) &&
+                (reqcfg.trace_cfg.trace_flags & VTSS_CFGTRACE_STACKS) && (reqcfg.trace_cfg.trace_flags & VTSS_CFGTRACE_CTX) &&
                 VTSS_IS_VALID_TASK(task) &&
                 !vtss_transport_is_overflowing(tskd->trnd) &&
                 tskd->stk.trylock(&tskd->stk)))
@@ -1708,7 +1743,7 @@ static void vtss_sched_switch_to(vtss_task_map_item_t* item, struct task_struct*
 
         write_lock_irqsave(&vtss_recovery_rwlock, flags);
         cpu_tskd = per_cpu(vtss_recovery_tskd, cpu);
-        if (unlikely((reqcfg.trace_cfg.trace_flags & VTSS_CFGTRACE_CTX) &&
+        if (unlikely(1/*(reqcfg.trace_cfg.trace_flags & VTSS_CFGTRACE_CTX)*/ &&
             cpu_tskd != NULL &&
             VTSS_IN_CONTEXT(cpu_tskd) &&
             VTSS_ERROR_STORE_SWAPOUT(cpu_tskd)))
@@ -1723,7 +1758,7 @@ static void vtss_sched_switch_to(vtss_task_map_item_t* item, struct task_struct*
         write_unlock_irqrestore(&vtss_recovery_rwlock, flags);
         /* Exit from context for the task if error was */
         if (unlikely(VTSS_IN_CONTEXT(tskd) && VTSS_ERROR_STORE_SWAPOUT(tskd))) {
-            if (reqcfg.trace_cfg.trace_flags & VTSS_CFGTRACE_CTX)
+            if (1/*reqcfg.trace_cfg.trace_flags & VTSS_CFGTRACE_CTX*/)
                 VTSS_STORE_SWAPOUT(tskd, 1, NOT_SAFE);
             else
                 VTSS_STORE_STATE(tskd, 0, VTSS_ST_SWAPOUT);
@@ -1749,11 +1784,12 @@ static void vtss_sched_switch_to(vtss_task_map_item_t* item, struct task_struct*
             if (!ip)
 #endif
                 ip = (void*)KSTK_EIP(task);
-            if (reqcfg.trace_cfg.trace_flags & VTSS_CFGTRACE_CTX) {
-                VTSS_STORE_SAMPLE(tskd, tskd->cpu, NULL, NOT_SAFE);
-                VTSS_STORE_SWAPIN(tskd, cpu, ip, NOT_SAFE);
+            if (1/*reqcfg.trace_cfg.trace_flags & VTSS_CFGTRACE_CTX || (cpu != tskd->cpu) || (tskd->state&VTSS_ST_CPU_CHANGE)*/) {
+                if (reqcfg.cpuevent_count_v1 !=0) VTSS_STORE_SAMPLE(tskd, tskd->cpu, NULL, NOT_SAFE);
+                //tskd->state &= ~VTSS_ST_CPU_CHANGE;
+                VTSS_STORE_SWAPIN(tskd, cpu, ip, NOT_SAFE/*, (cpu == tskd->cpu ? 0 : VTSS_ST_REC_CTX)*/);
             } else {
-                VTSS_STORE_SAMPLE(tskd, tskd->cpu, ip, NOT_SAFE);
+                if (reqcfg.cpuevent_count_v1 !=0) VTSS_STORE_SAMPLE(tskd, tskd->cpu, ip, NOT_SAFE);
                 VTSS_STORE_STATE(tskd, 0, VTSS_ST_SWAPIN);
             }
             if (likely(!VTSS_ERROR_STORE_SWAPIN(tskd))) {
@@ -1861,6 +1897,9 @@ static void vtss_pmi_dump(struct pt_regs* regs, vtss_task_map_item_t* item, int 
     if (unlikely(reqcfg.trace_cfg.trace_flags & VTSS_CFGTRACE_BRANCH)) {
         VTSS_PROFILE(bts, tskd->bts_size = vtss_bts_dump(tskd->bts_buff));
         vtss_bts_disable();
+    }else if (unlikely(reqcfg.trace_cfg.trace_flags & VTSS_CFGTRACE_IPT)) {
+        //VTSS_PROFILE(ipt, vtss_ipt_dump());
+        vtss_disable_ipt();
     }
 #endif
 }
@@ -1890,7 +1929,7 @@ static void vtss_pmi_record(struct pt_regs* regs, vtss_task_map_item_t* item, in
 
         write_lock_irqsave(&vtss_recovery_rwlock, flags);
         cpu_tskd = per_cpu(vtss_recovery_tskd, cpu);
-        if (unlikely((reqcfg.trace_cfg.trace_flags & VTSS_CFGTRACE_CTX) &&
+        if (unlikely(1/*(reqcfg.trace_cfg.trace_flags & VTSS_CFGTRACE_CTX)*/ &&
             cpu_tskd != NULL && cpu_tskd != tskd &&
             VTSS_IN_CONTEXT(cpu_tskd) &&
             VTSS_ERROR_STORE_SWAPOUT(cpu_tskd)))
@@ -1909,8 +1948,10 @@ static void vtss_pmi_record(struct pt_regs* regs, vtss_task_map_item_t* item, in
             VTSS_ERROR_STORE_SWAPIN(tskd) &&
             atomic_read(&vtss_collector_state) == VTSS_COLLECTOR_RUNNING))
         {
-            if (reqcfg.trace_cfg.trace_flags & VTSS_CFGTRACE_CTX){
-                VTSS_STORE_SWAPIN(tskd, cpu, (void*)instruction_pointer(regs), NOT_SAFE);
+            TRACE("in error store swapin");
+            if (1/*(reqcfg.trace_cfg.trace_flags & VTSS_CFGTRACE_CTX) || (cpu != tskd->cpu)||(tskd->state&VTSS_ST_CPU_CHANGE)*/){
+                VTSS_STORE_SWAPIN(tskd, cpu, (void*)instruction_pointer(regs), NOT_SAFE/*, (cpu == tskd->cpu ? 0 : VTSS_ST_REC_CTX)*/);
+//                tskd->state &= ~VTSS_ST_CPU_CHANGE;
                 }
             else
                 VTSS_STORE_STATE(tskd, 0, VTSS_ST_SWAPIN);
@@ -1920,7 +1961,7 @@ static void vtss_pmi_record(struct pt_regs* regs, vtss_task_map_item_t* item, in
                 write_unlock_irqrestore(&vtss_recovery_rwlock, flags);
                 tskd->state |= VTSS_ST_IN_CONTEXT;
                 tskd->cpu = cpu;
-                if (unlikely(VTSS_NEED_STACK_SAVE(tskd) &&
+                if (unlikely(VTSS_NEED_STACK_SAVE(tskd) && (reqcfg.trace_cfg.trace_flags & VTSS_CFGTRACE_CTX) &&
                     (reqcfg.trace_cfg.trace_flags & VTSS_CFGTRACE_STACKS) &&
                     tskd->stk.trylock(&tskd->stk)))
                 {
@@ -1973,11 +2014,18 @@ static void vtss_pmi_record(struct pt_regs* regs, vtss_task_map_item_t* item, in
                 tskd->stk.unlock(&tskd->stk);
             }
         }
+        if (unlikely((reqcfg.trace_cfg.trace_flags & VTSS_CFGTRACE_IPT) &&
+            !VTSS_ERROR_STORE_SAMPLE(tskd) &&
+            !(VTSS_ERROR_STACK_DUMP(tskd)&&(reqcfg.trace_cfg.trace_flags & VTSS_CFGTRACE_STACKS)) &&
+            !VTSS_ERROR_STACK_SAVE(tskd)))
+        {
+            VTSS_PROFILE(bts, vtss_dump_ipt(tskd->trnd, tskd->tid, tskd->cpu, 0));
+        }
 #ifndef VTSS_NO_BTS
-        if (unlikely(is_bts_overflowed && tskd->bts_size &&
+        else if (unlikely(is_bts_overflowed && tskd->bts_size &&
             (reqcfg.trace_cfg.trace_flags & VTSS_CFGTRACE_BRANCH) &&
             !VTSS_ERROR_STORE_SAMPLE(tskd) &&
-            !VTSS_ERROR_STACK_DUMP(tskd) &&
+            !(VTSS_ERROR_STACK_DUMP(tskd)&&(reqcfg.trace_cfg.trace_flags & VTSS_CFGTRACE_STACKS)) &&
             !VTSS_ERROR_STACK_SAVE(tskd)))
         {
 //            if (cnt <50)printk("bts is recording\n");
@@ -1986,6 +2034,12 @@ static void vtss_pmi_record(struct pt_regs* regs, vtss_task_map_item_t* item, in
         }
 #endif
     }
+}
+
+static int is_callcount_overflowed(void)
+{
+ if (reqcfg.trace_cfg.trace_flags & (VTSS_CFGTRACE_IPT)) return vtss_has_ipt_overflowed();
+ return vtss_bts_overflowed(smp_processor_id());
 }
 /**
  * CPU event counter overflow handler and BTS/PEBS buffer overflow handler
@@ -2012,7 +2066,7 @@ asmlinkage void vtss_pmi_handler(struct pt_regs *regs)
     local_irq_save(flags);
     preempt_disable();
 #ifndef VTSS_NO_BTS
-    is_bts_overflowed = vtss_bts_overflowed(smp_processor_id());
+    is_bts_overflowed = is_callcount_overflowed();
 #endif
     if (likely(!is_bts_overflowed))
         vtss_cpuevents_freeze();
@@ -2020,7 +2074,7 @@ asmlinkage void vtss_pmi_handler(struct pt_regs *regs)
         item = vtss_task_map_get_item(TASK_TID(current));
     if (likely(item != NULL)) {
         struct vtss_task_data* tskd = (struct vtss_task_data*)&item->data;
-        bts_enable = is_bts_enable(tskd);
+        bts_enable = is_callcount_enable(tskd);
         VTSS_PROFILE(pmi, vtss_pmi_dump(regs, item, is_bts_overflowed));
     } else {
         vtss_profiling_pause();
@@ -2142,13 +2196,36 @@ static void vtss_collector_pmi_disable_on_cpu(void *ctx)
 {
     vtss_pmi_disable();
 }
+
+#ifdef VTSS_AUTOCONF_INIT_WORK_TWO_ARGS
+static void vtss_transport_fini_work(struct work_struct *work)
+#else
+static void vtss_transport_fini_work(void *work)
+#endif
+{
+    vtss_transport_fini();
+}
+static int vtss_callcount_init(void)
+{
+    int rc = 0;
+    if (reqcfg.trace_cfg.trace_flags & VTSS_CFGTRACE_IPT) rc = vtss_ipt_init();
+    else  rc = vtss_bts_init(reqcfg.bts_cfg.brcount);
+    return rc;
+}
+
+static void vtss_callcount_fini(void)
+{
+    if (reqcfg.trace_cfg.trace_flags & VTSS_CFGTRACE_IPT) vtss_ipt_fini();
+    else vtss_bts_fini();
+}
+
 int vtss_collection_fini(void)
 {
     unsigned long flags = 0;
     vtss_probe_fini();
     vtss_cpuevents_fini_pmu();
     vtss_pebs_fini();
-    vtss_bts_fini();
+    vtss_callcount_fini();
     vtss_lbr_fini();
     vtss_dsa_fini();
 //    vtss_procfs_ctrl_wake_up(NULL, 0);
@@ -2157,7 +2234,8 @@ int vtss_collection_fini(void)
     write_lock_irqsave(&vtss_transport_init_rwlock, flags);
     atomic_set(&vtss_transport_initialized, 0);
     write_unlock_irqrestore(&vtss_transport_init_rwlock, flags);
-    vtss_transport_fini();
+    vtss_queue_work(-1, vtss_transport_fini_work, NULL, 0);
+    //vtss_transport_fini();
     vtss_session_uid = 0;
     vtss_session_gid = 0;
     vtss_time_limit  = 0ULL; /* set default value */
@@ -2173,6 +2251,25 @@ int vtss_collection_fini(void)
     return 0;
 }
 
+void vtss_collection_cfg_init(void)
+{
+    int i = 0;
+    memset(&reqcfg, 0, sizeof(process_cfg_t));
+    for (i = 0; i < vtss_stk_last; i++){
+        //reqcfg.stk_sz[i] = PAGE_SIZE*10;
+        //reqcfg.stk_page_sz[i] = PAGE_SIZE;
+        reqcfg.stk_sz[i] = (unsigned long)-1;
+        reqcfg.stk_pg_sz[i] = 0;
+    }
+}
+
+static int vtss_verify_settings(void)
+{
+    if (reqcfg.cpuevent_count_v1==0 && (reqcfg.trace_cfg.trace_flags & VTSS_CFGTRACE_BRANCH))
+        return -1;
+    return 0;
+}
+
 int vtss_cmd_start(void)
 {
     int rc = 0;
@@ -2183,9 +2280,14 @@ int vtss_cmd_start(void)
         return VTSS_ERR_START_IN_RUN;
     }
 
+    if (vtss_verify_settings())
+    {
+        TRACE("Incoming settings is incorrect\n");
+        return VTSS_ERR_BADARG;
+    }
     //workaround on the problem when pmi enabling while the collection is stopping, but some threads is still collecting data
     on_each_cpu(vtss_collector_pmi_disable_on_cpu, NULL, SMP_CALL_FUNCTION_ARGS);
-   vtss_nmi_watchdog_disable(0);
+    vtss_nmi_watchdog_disable(0);
 
     INFO("Starting vtss++ collection");
 #ifdef VTSS_DEBUG_PROFILE
@@ -2232,8 +2334,7 @@ int vtss_cmd_start(void)
     rc |= vtss_task_map_init();
     rc |= vtss_dsa_init();
     rc |= vtss_lbr_init();
-    INFO("Starting vtss++ collection continue 1");
-    rc |= vtss_bts_init(reqcfg.bts_cfg.brcount);
+    rc |= vtss_callcount_init();
     rc |= vtss_pebs_init();
     rc |= vtss_cpuevents_init_pmu(vtss_procfs_defsav());
     rc |= vtss_probe_init();
@@ -2248,7 +2349,6 @@ int vtss_cmd_start(void)
         INFO("Collection was not started because of initialization error.");
         vtss_collection_fini();
     }
-    INFO("Starting vtss++ collection continue 10");
     return rc;
 }
 

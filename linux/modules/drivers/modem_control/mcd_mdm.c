@@ -348,26 +348,3 @@ int mcd_mdm_power_off_ngff(void *data)
 
 	return ret;
 }
-
-int mcd_mdm_ap_cdump(void *data)
-{
-	struct mdm_info *mdm = data;
-
-	struct cpu_ops *cpu = &mdm->pdata->cpu;
-	struct pmic_ops *pmic = &mdm->pdata->pmic;
-
-	struct mdm_ctrl_mdm_data *mdm_data = mdm->pdata->modem_data;
-	void *cpu_data = mdm->pdata->cpu_data;
-	void *pmic_data = mdm->pdata->pmic_data;
-
-	int ret = 0;
-	int rst = cpu->get_gpio_apcdump(cpu_data);
-
-	gpio_set_value(rst, 1);
-
-        msleep(100);
-
-	gpio_set_value(rst, 0);
-
-	return ret;
-}

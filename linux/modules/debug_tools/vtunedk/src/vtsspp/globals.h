@@ -45,7 +45,7 @@
 #define VTSS_MAX_NAME_LEN 130
 
 #include "vtsserr.h"
-#include "vtssrtcfg.h"
+#include "vtsscfg.h"
 #include "vtsstypes.h"
 #include "vtsstrace.h"
 #include "vtssevids.h"
@@ -56,6 +56,7 @@
 
 #pragma pack(push, 1)
 
+#define VTSS_DEBUGCTL_MSR             0x1d9
 typedef struct
 {
     int version;
@@ -168,10 +169,13 @@ typedef struct processor_control_block
     void *scratch_ptr;          /// Scratch-pad memory pointer
 
     /// system-wide event chains
-#if 0
-    cpuevent_t*  cpuevent_chain_ptr; /// [VTSS_CFG_CHAIN_SIZE]
-//    chipevent_t* chipevent_chain_ptr; /// [VTSS_CFG_CHAIN_SIZE]
-#endif
+
+    /// IPT memory
+    void* topa_virt;                /// virtual address of IPT ToPA
+    void* iptbuf_virt;              /// virtual address of IPT output buffer
+    unsigned long long topa_phys;   /// physical address of IPT ToPA
+    unsigned long long iptbuf_phys; /// physical address of IPT output buffer
+
 } vtss_pcb_t;
 
 #pragma pack(pop)

@@ -53,6 +53,7 @@
 #include <asm/intel_scu_pmic.h>
 #include <asm/intel_mid_rpmsg.h>
 #include <asm/intel_mid_remoteproc.h>
+#include <asm/spid.h>
 #include <linux/io.h>
 #include <linux/sched.h>
 #include <linux/pm_runtime.h>
@@ -64,12 +65,13 @@
 #include <linux/usb/penwell_otg.h>
 #include <linux/HWVersion.h>
 #include "pmic_ccsm.h"
-#if defined(CONFIG_A500CG_BATTERY_SMB347) || defined(CONFIG_SMB1357_CHARGER)
+#if defined(CONFIG_SMB1357_CHARGER)
 #include "../../../kernel/drivers/power/ASUS_BATTERY/smb_external_include.h"
-#define SRCWAKECFG_ADDR       0x23
 extern int dcp_mode;
 extern int invalid_charger;
 #endif
+#define SRCWAKECFG_ADDR       0x23
+#define VPROG2CNT_REG	0xAD
 
 /* Macros */
 #define DRIVER_NAME "pmic_ccsm"
@@ -95,14 +97,12 @@ extern int invalid_charger;
 #define USBINPUTICC100VAL	100
 
 #define OHM_MULTIPLIER		10
-#define QC_SDP_QUEUE	1
 
 extern int Read_PROJ_ID(void);
-#ifdef QC_SDP_QUEUE
 static struct delayed_work 	sdp_work;
 static struct power_supply_cable_props g_cap = {0};
-#endif
-#if defined(CONFIG_A500CG_BATTERY_SMB347) || defined(CONFIG_SMB1357_CHARGER)
+
+#if defined(CONFIG_SMB1357_CHARGER)
 extern int smb1357_uv_result(void);
 extern int smb1357_power_ok(void);
 enum power_supply_charger_cable_type usb_cable_status = POWER_SUPPLY_CHARGER_TYPE_NONE;
@@ -387,6 +387,128 @@ exit:
 	return ret;
 }
 
+
+/**
+ * pmic_read_adc_val - read ADC value of specified sensors
+ * @channel: channel of the sensor to be sampled
+ * @sensor_val: pointer to the charger property to hold sampled value
+ * @chc :  battery info pointer
+ *
+ * Returns 0 if success
+ */
+static int pmic_read_adc_val(int channel, int *sensor_val,
+			      struct pmic_chrgr_drv_context *chc)
+{
+	int val;
+	int ret;
+	struct iio_channel *indio_chan = NULL;
+
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(3, 10, 0))
+	switch (channel) {
+	case GPADC_BATTEMP0:
+		indio_chan = iio_st_channel_get("BATTEMP", "BATTEMP0");
+		break;
+	case GPADC_BATID:
+		indio_chan = iio_st_channel_get("BATID", "BATID");
+		break;
+	default:
+		dev_err(chc->dev, "invalid sensor%d", channel);
+		ret = -EINVAL;
+	}
+#else
+	switch (channel) {
+	case GPADC_BATTEMP0:
+		indio_chan = iio_channel_get(NULL, "BATTEMP0");
+		break;
+	case GPADC_BATID:
+		indio_chan = iio_channel_get(NULL, "BATID");
+		break;
+	default:
+		dev_err(chc->dev, "invalid sensor%d", channel);
+		ret = -EINVAL;
+	}
+#endif
+	if (IS_ERR_OR_NULL(indio_chan)) {
+		ret = PTR_ERR(indio_chan);
+		goto exit;
+	}
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(3, 10, 0))
+	ret = iio_st_read_channel_raw(indio_chan, &val);
+#else
+	ret = iio_read_channel_raw(indio_chan, &val);
+#endif
+	if (ret) {
+		dev_err(chc->dev, "IIO channel read error\n");
+		goto err_exit;
+	}
+
+	switch (channel) {
+	case GPADC_BATTEMP0:
+		ret = CONVERT_ADC_TO_TEMP(val, sensor_val);
+		break;
+	case GPADC_BATID:
+		*sensor_val = val;
+		break;
+	default:
+		dev_err(chc->dev, "invalid sensor%d", channel);
+		ret = -EINVAL;
+	}
+	dev_dbg(chc->dev, "pmic_ccsm pmic_ccsm.0: %s adc val=%x, %d sensorval=%d\n",
+		__func__, val, val, *sensor_val);
+
+err_exit:
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(3, 10, 0))
+	iio_st_channel_release(indio_chan);
+#else
+	iio_channel_release(indio_chan);
+#endif
+exit:
+	return ret;
+}
+
+int pmic_get_battery_pack_temp(int *temp)
+{
+	if (chc.invalid_batt)
+		return -ENODEV;
+	return pmic_read_adc_val(GPADC_BATTEMP0, temp, &chc);
+}
+
+int pmic_get_battery_id(int *batt_id)
+{
+	int retval = 0;
+	if (chc.invalid_batt)
+		return -ENODEV;
+
+	/* Toggle BATTRMSRC to enable VREFB*/
+	retval = intel_scu_ipc_iowrite8(BATTDETCTRL_ADDR, 0x05);
+	if (unlikely(retval)) {
+		dev_err(chc.dev, "%s: Unable to enable VREFB", __func__);
+		return -ENODEV;
+	}
+
+	/* Take and discard a few samples to increase reliability */
+	pmic_read_adc_val(GPADC_BATID, batt_id , &chc);
+	pmic_read_adc_val(GPADC_BATID, batt_id , &chc);
+	pmic_read_adc_val(GPADC_BATID, batt_id , &chc);
+	pmic_read_adc_val(GPADC_BATID, batt_id , &chc);
+
+	/* Read BATT_ID resistance value from GPADC Channel 1 */
+	if (!pmic_read_adc_val(GPADC_BATID, batt_id , &chc)) {
+		/* Toggle BATTRMSRC to turn off VREFB*/
+		retval = intel_scu_ipc_iowrite8(BATTDETCTRL_ADDR, 0x01);
+		if (unlikely(retval)) {
+			dev_err(chc.dev, "%s: Unable to disable VREFB", __func__);
+			return -ENODEV;
+		}
+	} else {
+		dev_err(chc.dev, "%s: Unable to read BATTID", __func__);
+		return -ENODEV;
+	}
+
+	return 0;
+}
+
+
 #ifdef CONFIG_DEBUG_FS
 static int pmic_chrgr_reg_show(struct seq_file *seq, void *unused)
 {
@@ -437,6 +559,42 @@ static int pmic_chrgr_tt_reg_show(struct seq_file *seq, void *unused)
 	return 0;
 }
 
+static int pmic_adc_show(struct seq_file *seq, void *unused)
+{
+	int val;
+	int channel;
+
+	channel = (int)seq->private;
+	switch (channel) {
+	case GPADC_BATTEMP0:
+		if (pmic_get_battery_pack_temp(&val)) {
+			seq_printf(seq, "Error reading pack temperature\n");
+			return -EIO;
+		}
+		seq_printf(seq, "Battery Pack Temperature: %d\n", val);
+		break;
+	case GPADC_BATID:
+		if (pmic_get_battery_id(&val)) {
+			seq_printf(seq, "Error reading battid\n");
+			return -EIO;
+		}
+		seq_printf(seq, "Raw ADC Value: %d\n", val);
+		seq_printf(seq, "Battery Detected: ");
+		if (val < 205)
+			seq_printf(seq, "DC Supply\n");
+		else if (val > 238)
+			seq_printf(seq, "ATL 780 mAh\n");
+		else
+			seq_printf(seq, "ATL 800 mAh\n");
+
+		break;
+	default:
+		seq_printf(seq, "Invalid ADC Channel %d\n", channel);
+		break;
+	}
+	return 0;
+}
+
 static int pmic_chrgr_tt_reg_open(struct inode *inode, struct file *file)
 {
 	return single_open(file, pmic_chrgr_tt_reg_show, inode->i_private);
@@ -445,6 +603,11 @@ static int pmic_chrgr_tt_reg_open(struct inode *inode, struct file *file)
 static int pmic_chrgr_reg_open(struct inode *inode, struct file *file)
 {
 	return single_open(file, pmic_chrgr_reg_show, inode->i_private);
+}
+
+static int pmic_adc_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, pmic_adc_show, inode->i_private);
 }
 
 static struct dentry *charger_debug_dir;
@@ -466,6 +629,9 @@ static struct pmic_regs_def pmic_regs_bc[] = {
 	PMIC_REG_DEF(CHGRCTRL0_ADDR),
 	PMIC_REG_DEF(CHGRCTRL1_ADDR),
 	PMIC_REG_DEF(CHGRSTATUS_ADDR),
+	PMIC_REG_DEF(CHRLEDCTRL_ADDR),
+	PMIC_REG_DEF(CHRLEDFSM_ADDR),
+	PMIC_REG_DEF(CHRLEDPWM_ADDR),
 	PMIC_REG_DEF(USBIDCTRL_ADDR),
 	PMIC_REG_DEF(USBIDSTAT_ADDR),
 	PMIC_REG_DEF(WAKESRC_ADDR),
@@ -645,6 +811,13 @@ static const struct file_operations pmic_chrgr_tt_reg_fops = {
 	.release = single_release
 };
 
+static const struct file_operations pmic_adc_fops = {
+	.open = pmic_adc_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release
+};
+
 static void pmic_debugfs_init(void)
 {
 	struct dentry *fentry;
@@ -671,6 +844,19 @@ static void pmic_debugfs_init(void)
 	if (charger_debug_dir == NULL)
 		goto debugfs_root_exit;
 
+	/* Create files for printing battery ID and pack temp */
+	fentry = debugfs_create_file("battery_id",
+				S_IRUGO,
+				charger_debug_dir,
+				(void *)GPADC_BATID,
+				&pmic_adc_fops);
+
+	fentry = debugfs_create_file("pack_temperature",
+			S_IRUGO,
+			charger_debug_dir,
+			(void *)GPADC_BATTEMP0,
+			&pmic_adc_fops);
+
 	/* Create a directory for pmic charger registers */
 	pmic_regs_dir = debugfs_create_dir("pmic_ccsm_regs",
 			charger_debug_dir);
@@ -680,7 +866,7 @@ static void pmic_debugfs_init(void)
 
 	for (reg_index = 0; reg_index < pmic_reg_cnt; reg_index++) {
 
-		sprintf(name, "%s",
+		snprintf(name, PMIC_REG_NAME_LEN, "%s",
 			pmic_regs[reg_index].reg_name);
 
 		fentry = debugfs_create_file(name,
@@ -702,7 +888,8 @@ static void pmic_debugfs_init(void)
 
 	for (reg_index = 0; reg_index < pmic_tt_reg_cnt; reg_index++) {
 
-		sprintf(name, "%s", pmic_tt_regs[reg_index].reg_name);
+		snprintf(name, PMIC_REG_NAME_LEN, "%s",
+			pmic_tt_regs[reg_index].reg_name);
 
 		fentry = debugfs_create_file(name,
 				S_IRUGO,
@@ -778,6 +965,9 @@ static void pmic_bat_zone_changed(void)
 		chc.health = POWER_SUPPLY_HEALTH_GOOD;
 
 	psy_bat = get_psy_battery();
+
+	/* Trigger charging algo to get new parameters */
+	power_supply_changed(psy_bat);
 
 	if (psy_bat && psy_bat->external_power_changed)
 		psy_bat->external_power_changed(psy_bat);
@@ -1130,69 +1320,6 @@ int pmic_set_ilimma(int ilim_ma)
 	return ret;
 }
 
-/**
- * pmic_read_adc_val - read ADC value of specified sensors
- * @channel: channel of the sensor to be sampled
- * @sensor_val: pointer to the charger property to hold sampled value
- * @chc :  battery info pointer
- *
- * Returns 0 if success
- */
-static int pmic_read_adc_val(int channel, int *sensor_val,
-			      struct pmic_chrgr_drv_context *chc)
-{
-	int val;
-	int ret;
-	struct iio_channel *indio_chan;
-
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(3, 10, 0))
-	indio_chan = iio_st_channel_get("BATTEMP", "BATTEMP0");
-#else
-	indio_chan = iio_channel_get(NULL, "BATTEMP0");
-#endif
-	if (IS_ERR_OR_NULL(indio_chan)) {
-		ret = PTR_ERR(indio_chan);
-		goto exit;
-	}
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(3, 10, 0))
-	ret = iio_st_read_channel_raw(indio_chan, &val);
-#else
-	ret = iio_read_channel_raw(indio_chan, &val);
-#endif
-	if (ret) {
-		dev_err(chc->dev, "IIO channel read error\n");
-		goto err_exit;
-	}
-
-	switch (channel) {
-	case GPADC_BATTEMP0:
-		ret = CONVERT_ADC_TO_TEMP(val, sensor_val);
-		break;
-	default:
-		dev_err(chc->dev, "invalid sensor%d", channel);
-		ret = -EINVAL;
-	}
-	dev_dbg(chc->dev, "pmic_ccsm pmic_ccsm.0: %s adc val=%x, %d temp=%d\n",
-		__func__, val, val, *sensor_val);
-
-err_exit:
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(3, 10, 0))
-	iio_st_channel_release(indio_chan);
-#else
-	iio_channel_release(indio_chan);
-#endif
-exit:
-	return ret;
-}
-
-int pmic_get_battery_pack_temp(int *temp)
-{
-	if ((chc.invalid_batt)&&(Read_PROJ_ID()!=PROJ_ID_ZX550ML))
-		return -ENODEV;
-	return pmic_read_adc_val(GPADC_BATTEMP0, temp, &chc);
-}
-EXPORT_SYMBOL(pmic_get_battery_pack_temp);
-
 static bool is_hvdcp_charging_enabled(int mask)
 {
 	int ret;
@@ -1378,7 +1505,6 @@ static int get_charger_type(void)
 	}
 }
 
-#ifdef QC_SDP_QUEUE
 static void sdp_report_queue(struct work_struct *work)
 {
 #if defined(CONFIG_SMB1357_CHARGER)
@@ -1387,14 +1513,13 @@ static void sdp_report_queue(struct work_struct *work)
 		g_cap.chrg_type = POWER_SUPPLY_CHARGER_TYPE_USB_DCP;
 #endif
 	atomic_notifier_call_chain(&chc.otg->notifier, USB_EVENT_CHARGER, &g_cap);
-#if defined(CONFIG_A500CG_BATTERY_SMB347) || defined(CONFIG_SMB1357_CHARGER)
+#if defined(CONFIG_SMB1357_CHARGER)
 	if (Read_PROJ_ID()!=PROJ_ID_ZX550ML) {
 		usb_cable_status = POWER_SUPPLY_CHARGER_TYPE_USB_SDP;
 		cable_status_notifier_call_chain(usb_cable_status, &g_cap);
 	}
 #endif
 }
-#endif
 
 static void handle_internal_usbphy_notifications(int mask)
 {
@@ -1422,12 +1547,12 @@ static void handle_internal_usbphy_notifications(int mask)
 	dev_info(chc.dev, "Notifying OTG ev:%d, evt:%d, chrg_type:%d, mA:%d\n",
 			USB_EVENT_CHARGER, cap.chrg_evt, cap.chrg_type,
 			cap.ma);
-#ifdef QC_SDP_QUEUE
+
 	g_cap = cap;
 	if (cap.chrg_evt == POWER_SUPPLY_CHARGER_EVENT_DISCONNECT) {
 		cancel_delayed_work(&sdp_work);
 		atomic_notifier_call_chain(&chc.otg->notifier, USB_EVENT_CHARGER, &cap);
-#if defined(CONFIG_A500CG_BATTERY_SMB347) || defined(CONFIG_SMB1357_CHARGER)
+#if defined(CONFIG_SMB1357_CHARGER)
 			usb_cable_status = POWER_SUPPLY_CHARGER_TYPE_NONE;
 			cable_status_notifier_call_chain(usb_cable_status, &cap);
 #endif
@@ -1441,26 +1566,17 @@ static void handle_internal_usbphy_notifications(int mask)
 		} else
 			schedule_delayed_work(&sdp_work, 1.5*HZ);
 #else
-		schedule_delayed_work(&sdp_work, 1.5*HZ);
+		schedule_delayed_work(&sdp_work, 0*HZ);
 #endif
 	}else {
 		atomic_notifier_call_chain(&chc.otg->notifier, USB_EVENT_CHARGER, &cap);
-#if defined(CONFIG_A500CG_BATTERY_SMB347) || defined(CONFIG_SMB1357_CHARGER)
+#if defined(CONFIG_SMB1357_CHARGER)
 		usb_cable_status = cap.chrg_type;
 		cable_status_notifier_call_chain(usb_cable_status, &cap);
 #endif
 	}
-#else
-	atomic_notifier_call_chain(&chc.otg->notifier,
-			USB_EVENT_CHARGER, &cap);
-#if defined(CONFIG_A500CG_BATTERY_SMB347) || defined(CONFIG_SMB1357_CHARGER)
-	if(cap.chrg_evt == POWER_SUPPLY_CHARGER_EVENT_DISCONNECT)
-		usb_cable_status = POWER_SUPPLY_CHARGER_TYPE_NONE;
-	else
-		usb_cable_status = cap.chrg_type;
-	cable_status_notifier_call_chain(usb_cable_status, &cap);
-#endif
-#endif
+
+/*	no need to detect HVDCP from PMIC
 	if (cap.chrg_type == POWER_SUPPLY_CHARGER_TYPE_USB_DCP) {
 		hvdcp_chgr = is_hvdcp_charging_enabled(mask);
 		if (hvdcp_chgr && mask) {
@@ -1473,7 +1589,7 @@ static void handle_internal_usbphy_notifications(int mask)
 					cap.chrg_type, cap.ma);
 			atomic_notifier_call_chain(&chc.otg->notifier,
 					USB_EVENT_CHARGER, &cap);
-#if defined(CONFIG_A500CG_BATTERY_SMB347) || defined(CONFIG_SMB1357_CHARGER)
+#if defined(CONFIG_SMB1357_CHARGER)
 			if(cap.chrg_evt == POWER_SUPPLY_CHARGER_EVENT_DISCONNECT)
 				usb_cable_status = POWER_SUPPLY_CHARGER_TYPE_NONE;
 			else
@@ -1482,6 +1598,7 @@ static void handle_internal_usbphy_notifications(int mask)
 #endif
 		}
 	}
+*/
 }
 
 /* ShadyCove-WA for VBUS removal detect issue */
@@ -1542,6 +1659,7 @@ int pmic_handle_low_supply(void)
 			break;
 		}
 	}
+
 #if defined(CONFIG_SMB1357_CHARGER)
 	if (!(val & SCHRGRIRQ1_SVBUSDET_MASK)||smb1357_uv_result()) {
 #else
@@ -1553,6 +1671,13 @@ int pmic_handle_low_supply(void)
 		mutex_lock(&chc.evt_queue_lock);
 		chc.vbus_connect_status = false;
 		mutex_unlock(&chc.evt_queue_lock);
+
+		if (Read_PROJ_ID()==PROJ_ID_ZX550ML) {
+			if (chc.is_internal_usb_phy && chc.otg_mode_enabled) {
+				dev_info(chc.dev, "switch to otg when charging, send cable out event first\n");
+				handle_internal_usbphy_notifications(mask);
+			}
+		}
 
 		if (chc.is_internal_usb_phy && !chc.otg_mode_enabled)
 			handle_internal_usbphy_notifications(mask);
@@ -1647,13 +1772,10 @@ static void handle_level1_interrupt(u8 int_reg, u8 stat_reg)
 
 			atomic_notifier_call_chain(&chc.otg->notifier,
 					USB_EVENT_ID, &mask);
-#if defined(CONFIG_A500CG_BATTERY_SMB347)
-			setSMB347Charger(mask ? ENABLE_5V: DISABLE_5V);
-			pmic_handle_otgmode(mask ? true:false);
-#elif defined(CONFIG_SMB1357_CHARGER)
+#if defined(CONFIG_SMB1357_CHARGER)
 			setSMB1357Charger(mask ? ENABLE_5V: DISABLE_5V);
-			pmic_handle_otgmode(mask ? true:false);
 #endif
+			pmic_handle_otgmode(mask ? true:false);
 		}
 	}
 
@@ -2104,7 +2226,7 @@ static int pmic_check_initial_events(void)
 {
 	struct pmic_event *evt;
 	int ret;
-	u8 mask = (CHRGRIRQ1_SVBUSDET_MASK);
+	u8 mask = (CHRGRIRQ1_SVBUSDET_MASK), chgrirq1_stat;
 	int vendor_id = chc.pmic_id & PMIC_VENDOR_ID_MASK;
 
 	evt = kzalloc(sizeof(struct pmic_event), GFP_KERNEL);
@@ -2116,8 +2238,9 @@ static int pmic_check_initial_events(void)
 
 	ret = intel_scu_ipc_ioread8(SCHGRIRQ0_ADDR, &evt->chgrirq0_stat);
 	evt->chgrirq0_int = evt->chgrirq0_stat;
-	ret = intel_scu_ipc_ioread8(SCHGRIRQ1_ADDR, &evt->chgrirq1_stat);
-	evt->chgrirq1_int = evt->chgrirq1_stat;
+	ret = intel_scu_ipc_ioread8(SCHGRIRQ1_ADDR, &chgrirq1_stat);
+	evt->chgrirq1_stat = chgrirq1_stat;
+	evt->chgrirq1_int = chgrirq1_stat;
 
 	/* For ShadyCove, CHGRIRQ1_REG & SCHGRIRQ1_REG cannot be directly
 	 * mapped. If status has (01 = Short to ground detected), it means
@@ -2125,16 +2248,16 @@ static int pmic_check_initial_events(void)
 	 * detected), it means USBIDFLTDET should be handled.
 	 */
 	if (vendor_id == SHADYCOVE_VENDORID) {
-		if ((evt->chgrirq1_stat & SCHRGRIRQ1_SUSBIDGNDDET_MASK)
+		if ((chgrirq1_stat & SCHRGRIRQ1_SUSBIDGNDDET_MASK)
 				== SHRT_FLT_DET) {
 			evt->chgrirq1_int |= CHRGRIRQ1_SUSBIDFLTDET_MASK;
 			evt->chgrirq1_int &= ~CHRGRIRQ1_SUSBIDGNDDET_MASK;
-		} else if ((evt->chgrirq1_stat & SCHRGRIRQ1_SUSBIDGNDDET_MASK)
+		} else if ((chgrirq1_stat & SCHRGRIRQ1_SUSBIDGNDDET_MASK)
 				== SHRT_GND_DET)
 			evt->chgrirq1_int |= CHRGRIRQ1_SUSBIDGNDDET_MASK;
 	}
 
-	if (evt->chgrirq1_stat || evt->chgrirq0_int) {
+	if (chgrirq1_stat || evt->chgrirq0_int) {
 		INIT_LIST_HEAD(&evt->node);
 		mutex_lock(&chc.evt_queue_lock);
 		list_add_tail(&evt->node, &chc.evt_queue);
@@ -2142,7 +2265,7 @@ static int pmic_check_initial_events(void)
 		schedule_work(&chc.evt_work);
 	}
 
-	if ((evt->chgrirq1_stat & mask) && !wake_lock_active(&chc.wakelock)) {
+	if ((chgrirq1_stat & mask) && !wake_lock_active(&chc.wakelock)) {
 		/*
 		Setting the Usb wake lock hold timeout to a safe value of 5s.
 		*/
@@ -2153,6 +2276,217 @@ static int pmic_check_initial_events(void)
 
 	return ret;
 }
+
+static ssize_t attr_led_ctrl_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	u8 ctrl, fsm, mode;
+	int ret;
+	ssize_t len = 0;
+
+	ret = intel_scu_ipc_ioread8(CHRLEDCTRL_ADDR, &ctrl);
+	if (ret)
+		return -EIO;
+
+	ret = intel_scu_ipc_ioread8(CHRLEDFSM_ADDR, &fsm);
+	if (ret)
+		return -EIO;
+
+	/* report mode based on CHRLEDFN, SWLEDON, LEDFSMDIS and LEDEFF */
+	if (ctrl & CHRLEDFN_SW_CONTROL) {
+		if (ctrl & SWLEDON_ENABLE) {
+			if ((fsm & LEDFSMDIS_DISABLED) == 0) {
+				u8 mode = fsm & CHRLEDFSM_LEDEFF_MASK;
+
+				if (mode == LEDEFF_OFF) {
+					len = sprintf(buf, "off\n");
+				} else if (mode == LEDEFF_ON) {
+					len = sprintf(buf, "on\n");
+				} else if (mode == LEDEFF_BLINK) {
+					len = sprintf(buf, "blink\n");
+				} else if (mode == LEDEFF_BREATHE) {
+					len = sprintf(buf, "breathe\n");
+				}
+			} else {
+				len = sprintf(buf, "manual\n");
+			}
+		} else {
+			len = sprintf(buf, "off\n");
+		}
+	} else {
+		len = sprintf(buf, "auto\n");
+	}
+
+	return len;
+}
+
+static ssize_t attr_led_ctrl_store(struct device *dev, struct device_attribute *attr,
+		const char *buf, size_t size)
+{
+	int ret;
+
+	if (!strncmp(buf, "on", 2)) {
+		ret = intel_scu_ipc_update_register(CHRLEDCTRL_ADDR,
+				CHRLEDFN_SW_CONTROL | SWLEDON_ENABLE,
+				CHRLEDCTRL_SWLEDON_MASK | CHRLEDCTRL_CHRLEDFN_MASK);
+		if (ret)
+			return -EIO;
+
+		ret = intel_scu_ipc_update_register(CHRLEDFSM_ADDR,
+				LEDEFF_ON,
+				CHRLEDFSM_LEDFSMDIS_MASK | CHRLEDFSM_LEDEFF_MASK);
+		if (ret)
+			return -EIO;
+	} else if (!strncmp(buf, "off", 3)) {
+		ret = intel_scu_ipc_update_register(CHRLEDCTRL_ADDR,
+				CHRLEDFN_SW_CONTROL,
+				CHRLEDCTRL_SWLEDON_MASK | CHRLEDCTRL_CHRLEDFN_MASK);
+		if (ret)
+			return -EIO;
+	} else if (!strncmp(buf, "auto", 4)) {
+		ret = intel_scu_ipc_update_register(CHRLEDCTRL_ADDR,
+				0, CHRLEDCTRL_CHRLEDFN_MASK);
+		if (ret)
+			return -EIO;
+	} else if (!strncmp(buf, "blink", 5)) {
+		ret = intel_scu_ipc_update_register(CHRLEDCTRL_ADDR,
+				CHRLEDFN_SW_CONTROL | SWLEDON_ENABLE,
+				CHRLEDCTRL_SWLEDON_MASK | CHRLEDCTRL_CHRLEDFN_MASK);
+		if (ret)
+			return -EIO;
+
+		ret = intel_scu_ipc_update_register(CHRLEDFSM_ADDR,
+				LEDEFF_BLINK,
+				CHRLEDFSM_LEDFSMDIS_MASK | CHRLEDFSM_LEDEFF_MASK);
+		if (ret)
+			return -EIO;
+	} else if (!strncmp(buf, "manual", 6)) {
+		ret = intel_scu_ipc_update_register(CHRLEDCTRL_ADDR,
+				CHRLEDFN_SW_CONTROL | SWLEDON_ENABLE,
+				CHRLEDCTRL_SWLEDON_MASK | CHRLEDCTRL_CHRLEDFN_MASK);
+		if (ret)
+			return -EIO;
+
+		ret = intel_scu_ipc_update_register(CHRLEDFSM_ADDR,
+				LEDFSMDIS_DISABLED,
+				CHRLEDFSM_LEDFSMDIS_MASK | CHRLEDFSM_LEDEFF_MASK);
+		if (ret)
+			return -EIO;
+	} else if (!strncmp(buf, "breathe", 7)) {
+		ret = intel_scu_ipc_update_register(CHRLEDCTRL_ADDR,
+				CHRLEDFN_SW_CONTROL | SWLEDON_ENABLE,
+				CHRLEDCTRL_SWLEDON_MASK | CHRLEDCTRL_CHRLEDFN_MASK);
+		if (ret)
+			return -EIO;
+
+		ret = intel_scu_ipc_update_register(CHRLEDFSM_ADDR,
+				LEDEFF_BREATHE,
+				CHRLEDFSM_LEDFSMDIS_MASK | CHRLEDFSM_LEDEFF_MASK);
+		if (ret)
+			return -EIO;
+	} else {
+		return -EINVAL;
+	}
+
+	return size;
+}
+
+static ssize_t attr_led_duty_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	u8 data;
+	int ret;
+
+	ret = intel_scu_ipc_ioread8(CHRLEDPWM_ADDR, &data);
+	if (ret)
+		return -EIO;
+
+	return sprintf(buf, "%u\n", data);
+}
+
+static ssize_t attr_led_duty_store(struct device *dev, struct device_attribute *attr,
+		const char *buf, size_t size)
+{
+	int ret;
+	unsigned value;
+
+	ret = sscanf(buf, "%u", &value);
+	if (ret != 1)
+		return -EINVAL;
+
+	if (value > 255)
+		value = 255;
+
+	ret = intel_scu_ipc_iowrite8(CHRLEDPWM_ADDR, value);
+	if (ret)
+		return -EIO;
+
+	return size;
+}
+
+static ssize_t attr_led_freq_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	u8 data, mode;
+	ssize_t len = 0;
+	int ret;
+
+	ret = intel_scu_ipc_ioread8(CHRLEDCTRL_ADDR, &data);
+	if (ret)
+		return -EIO;
+
+	mode = data & CHRLEDCTRL_CHRLEDF_MASK;
+
+	if (mode == CHRLEDF_QUARTER_HZ) {
+		len = sprintf(buf, "quarter\n");
+	} else if (mode == CHRLEDF_HALF_HZ) {
+		len = sprintf(buf, "half\n");
+	} else if (mode == CHRLEDF_ONE_HZ) {
+		len = sprintf(buf, "one\n");
+	} else if (mode == CHRLEDF_TWO_HZ) {
+		len = sprintf(buf, "two\n");
+	}
+
+	return len;
+}
+
+static ssize_t attr_led_freq_store(struct device *dev, struct device_attribute *attr,
+		const char *buf, size_t size)
+{
+	u8 mode;
+	int ret;
+
+	if (!strncmp(buf, "quarter", 7)) {
+		mode = CHRLEDF_QUARTER_HZ;
+	} else if (!strncmp(buf, "half", 4)) {
+		mode = CHRLEDF_HALF_HZ;
+	} else if (!strncmp(buf, "one", 3)) {
+		mode = CHRLEDF_ONE_HZ;
+	} else if (!strncmp(buf, "two", 3)) {
+		mode = CHRLEDF_TWO_HZ;
+	} else {
+		return -EINVAL;
+	}
+
+	ret = intel_scu_ipc_update_register(CHRLEDCTRL_ADDR,
+			mode, CHRLEDCTRL_CHRLEDF_MASK);
+	if (ret)
+		return -EIO;
+
+	return size;
+}
+
+static DEVICE_ATTR(led_ctrl, S_IRUSR|S_IWUSR, attr_led_ctrl_show, attr_led_ctrl_store);
+static DEVICE_ATTR(led_duty, S_IRUSR|S_IWUSR, attr_led_duty_show, attr_led_duty_store);
+static DEVICE_ATTR(led_freq, S_IRUSR|S_IWUSR, attr_led_freq_show, attr_led_freq_store);
+
+static struct attribute *pmic_ccsm_attrs[] = {
+	&dev_attr_led_ctrl.attr,
+	&dev_attr_led_duty.attr,
+	&dev_attr_led_freq.attr,
+	NULL,
+};
+
+static const struct attribute_group pmic_ccsm_attr_group = {
+	.attrs = pmic_ccsm_attrs,
+};
 
 /**
  * pmic_charger_probe - PMIC charger probe function
@@ -2276,9 +2610,8 @@ static int pmic_chrgr_probe(struct platform_device *pdev)
 		retval = -ENOMEM;
 		goto otg_req_failed;
 	}
-#ifdef QC_SDP_QUEUE
+
 	INIT_DELAYED_WORK(&sdp_work, sdp_report_queue);
-#endif
 	INIT_WORK(&chc.evt_work, pmic_event_worker);
 	INIT_LIST_HEAD(&chc.evt_queue);
 	mutex_init(&chc.evt_queue_lock);
@@ -2326,17 +2659,54 @@ static int pmic_chrgr_probe(struct platform_device *pdev)
 	if (unlikely(retval))
 		goto unmask_irq_failed;
 
-#if defined(CONFIG_A500CG_BATTERY_SMB347) || defined(CONFIG_SMB1357_CHARGER)
+	if ((Read_PROJ_ID()==PROJ_ID_ZE550ML)||(Read_PROJ_ID()==PROJ_ID_ZE551ML)||
+		(Read_PROJ_ID()==PROJ_ID_ZE551ML_CKD)||(Read_PROJ_ID()==PROJ_ID_ZE551ML_ESE)||
+		(Read_PROJ_ID()==PROJ_ID_ZX550ML)) {
 		//diable otg wake up system ++Wigman 2014/10/13
-		retval = intel_scu_ipc_iowrite8(SRCWAKECFG_ADDR,D0|D3|D1);
-		printk("[PMIC] pmic %s set wake up sorce Config REG \n",__func__);
-#endif
+		dev_info(chc.dev, "set wake up sorce Config REG\n");
+		retval = intel_scu_ipc_iowrite8(SRCWAKECFG_ADDR, D0|D3|D1);
+	}
+
+	if ((Read_PROJ_ID()==PROJ_ID_ZS570ML)||(Read_PROJ_ID()==PROJ_ID_ZS571ML)) {
+		/* set VPROG2VSEL to 1.80V: 10ADh[7:6]="01" */
+		dev_info(chc.dev, "set VPROG2VSEL to 1.80V\n");
+		retval = pmic_read_reg(VPROG2CNT_REG, &val);
+		val &= ~(BIT(7));
+		val |= (BIT(6));
+		retval = intel_scu_ipc_iowrite8(VPROG2CNT_REG, val);
+	}
+
 	chc.health = POWER_SUPPLY_HEALTH_GOOD;
 #ifdef CONFIG_DEBUG_FS
 	pmic_debugfs_init();
 #endif
-	return 0;
 
+	retval = sysfs_create_group(&pdev->dev.kobj, &pmic_ccsm_attr_group);
+	if (unlikely(retval)) {
+		dev_err(&pdev->dev, "Failed to create sysfs group: %d\n", retval);
+		goto sysfs_create_failed;
+	}
+	if ((INTEL_MID_BOARD(2, PHONE, MRFL, BTNS, PRO) || INTEL_MID_BOARD(2, PHONE, MRFL, BTNS, ENG))) {
+		/* turn on the PMIC power LED */
+		retval = intel_scu_ipc_update_register(CHRLEDCTRL_ADDR,
+				CHRLEDFN_SW_CONTROL | SWLEDON_ENABLE,
+				CHRLEDCTRL_SWLEDON_MASK | CHRLEDCTRL_CHRLEDFN_MASK);
+		if (unlikely(retval))
+			goto set_led_failed;
+
+		retval = intel_scu_ipc_update_register(CHRLEDFSM_ADDR,
+				LEDEFF_ON,
+				CHRLEDFSM_LEDFSMDIS_MASK | CHRLEDFSM_LEDEFF_MASK);
+		if (unlikely(retval))
+			goto set_led_failed;
+
+		return 0;
+	} else {
+		return 0;
+	}
+set_led_failed:
+	sysfs_remove_group(&pdev->dev.kobj, &pmic_ccsm_attr_group);
+sysfs_create_failed:
 unmask_irq_failed:
 req_irq_failed:
 	free_irq(chc.irq, &chc);
