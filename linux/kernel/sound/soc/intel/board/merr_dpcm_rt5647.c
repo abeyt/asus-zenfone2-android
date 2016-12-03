@@ -49,6 +49,7 @@
 #include "../platform-libs/controls_v2_dpcm.h"
 #include <linux/lnw_gpio.h>
 #include <linux/HWVersion.h>
+#include <linux/mutex.h>
 
 #define DEFAULT_MCLK       (19200000)
 
@@ -63,6 +64,7 @@ static struct class* headset_class;
 static struct device* headset_dev;
 static struct class* gpio_userCtrl_class;
 static struct device* gpio_userCtrl_dev;
+static struct mutex codec_mutex;
 int headset_state;
 int uart_gpio = 121;
 int button_play_status = 0;
@@ -508,6 +510,8 @@ static int mrfld_jack_gpio_pr_detect(void)
 	if (gpio_get_value(uart_gpio) != 0)
 		printk("%s: enter\n", __func__);
 
+	mutex_lock(&codec_mutex);
+
 	mrfld_hs_enable = gpio_get_value(gpio->gpio);
 
 	if (!gpio->invert)
@@ -527,6 +531,9 @@ static int mrfld_jack_gpio_pr_detect(void)
 		if (gpio_get_value(uart_gpio) != 0)
 			printk("%s: headset removal, status %d\n", __func__, mrfld_hs_status);
 	}
+
+	mutex_unlock(&codec_mutex);
+
 	return mrfld_hs_status;
 }
 
@@ -543,14 +550,21 @@ static int mrfld_jack_gpio_pr_detect_bp_play(void)
 
 	msleep(20);
 
-	if (mrfld_play_enable && mrfld_hs_enable && (mrfld_hs_status == SND_JACK_HEADSET)) {
-		status = SND_JACK_BTN_0;
-		printk("%s: Button Press\n", __func__);
+	if (mrfld_hs_enable == 1 && (mrfld_hs_status == SND_JACK_HEADSET)) {
+		if (mrfld_play_enable) {
+			status = SND_JACK_BTN_0;
+			printk("%s: Button Press\n", __func__);
+		}
+		else {
+			status = 0;
+			printk("%s: Button Release\n", __func__);
+		}
 	}
 	else {
 		status = 0;
-		printk("%s: Button Release\n", __func__);
+		printk("%s: Button unknown\n", __func__);
 	}
+
 	return status;
 }
 
@@ -1135,6 +1149,8 @@ static int snd_mrfld_mc_probe(struct platform_device *pdev)
 
 	pr_debug("Entry %s\n", __func__);
 
+	mutex_init(&codec_mutex);
+
 	headset_class = class_create(THIS_MODULE, "uart_headset");
 	headset_dev = device_create(headset_class, NULL, 0, "%s", "headset_detect");
 
@@ -1214,6 +1230,7 @@ else {
 
 unalloc:
 	kfree(drv);
+	mutex_destroy(&codec_mutex);
 	return ret_val;
 }
 
@@ -1232,6 +1249,9 @@ static int snd_mrfld_mc_remove(struct platform_device *pdev)
 	snd_soc_card_set_drvdata(soc_card, NULL);
 	snd_soc_unregister_card(soc_card);
 	platform_set_drvdata(pdev, NULL);
+
+	mutex_destroy(&codec_mutex);
+
 	return 0;
 }
 
@@ -1244,6 +1264,8 @@ static void snd_mrfld_mc_shutdown(struct platform_device *pdev)
 		snd_soc_jack_free_gpios(&drv->jack, NUM_HS_GPIOS_PR, hs_gpio_pr);
 	else
 		snd_soc_jack_free_gpios(&drv->jack, NUM_HS_GPIOS, hs_gpio);
+
+	mutex_destroy(&codec_mutex);
 
 	pr_debug("In %s\n", __func__);
 }

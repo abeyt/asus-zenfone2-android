@@ -76,7 +76,7 @@
 #define IFX_SPI_HEADER_F		(-2)
 
 
-#define IFX_SPI_IPC_TIMEOUT_ATTEMPTS	2
+#define IFX_SPI_IPC_TIMEOUT_ATTEMPTS	3
 
 /* forward reference */
 static void ifx_spi_handle_srdy(struct ifx_spi_device *ifx_dev);
@@ -116,6 +116,7 @@ static inline void mrdy_set_high(struct ifx_spi_device *ifx)
 static inline void mrdy_set_low(struct ifx_spi_device *ifx)
 {
 	gpio_set_value(ifx->gpio.mrdy, 0);
+        udelay(70);
 }
 
 /**
@@ -314,6 +315,7 @@ static void ifx_spi_timeout(unsigned long arg)
 			set_bit(IFX_SPI_STATE_IPC_RECOVER, &ifx_dev->flags);
 			clear_bit(IFX_SPI_STATE_TIMER_PENDING, &ifx_dev->flags);
 			mrdy_set_low(ifx_dev);
+                        udelay(30);
 			mrdy_assert(ifx_dev);
 			dev_warn(&ifx_dev->spi_dev->dev, "*** SPI Timeout, "
 						"have to assert mrdy once due to no srdy finally ***");
